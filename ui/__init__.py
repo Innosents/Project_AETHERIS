@@ -1,4 +1,3 @@
 """
-Root compatibility shim for ui package.
+Root compatibility package for ui.
 """
-from graphpath.ui import *
