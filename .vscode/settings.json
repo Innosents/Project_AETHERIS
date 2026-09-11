@@ -11,7 +11,9 @@
         "PYTHONPATH": "${workspaceFolder}"
     },
     "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}"
+        "PYTHONPATH": "${workspaceFolder}",
+
+    "antigravity.planning.stopAfterPlanning": "true"    
     },
     "git.ignoreLimitWarning": true,
     "git.autorefresh": false,
