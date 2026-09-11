@@ -1,0 +1,106 @@
+{
+    "192.168.1.0/24": {
+        "name": "Home_Network (192.168.1.0/24)",
+        "target_subnets": [
+            "192.168.1.0/24"
+        ],
+        "core_switches": [
+            "192.168.1.1",
+            "192.168.1.254"
+        ],
+        "passive_sniff_duration": 5.0,
+        "ssh": {
+            "username": "admin",
+            "password": ""
+        },
+        "snmp": {
+            "community": "public"
+        },
+        "vlans_to_scan": {}
+    },
+    "10.10.4.0/24": {
+        "name": "Site_10.10.4.0_24",
+        "target_subnets": [
+            "10.10.4.0/24"
+        ],
+        "core_switches": [
+            "10.10.4.1"
+        ],
+        "passive_sniff_duration": 5.0,
+        "ssh": {
+            "username": "user",
+            "password": ""
+        },
+        "snmp": {
+            "community": "public"
+        },
+        "vlans_to_scan": {},
+        "linux_servers": [
+            "10.10.4.20",
+            "10.10.4.13"
+        ],
+        "linux_ssh": {
+            "username": "user",
+            "password": ""
+        }
+    },
+    "10.10.7.0/24": {
+        "name": "Site_10.10.7.0_24",
+        "target_subnets": [
+            "10.10.7.0/24",
+            "10.10.4.0/24",
+            "172.21.144.0/20"
+        ],
+        "core_switches": [
+            "10.10.7.1",
+            "10.10.4.1"
+        ],
+        "passive_sniff_duration": 5.0,
+        "ssh": {
+            "username": "user",
+            "password": ""
+        },
+        "snmp": {
+            "community": "public"
+        },
+        "vlans_to_scan": {},
+        "linux_servers": [
+            "10.10.4.20",
+            "10.10.4.13"
+        ],
+        "linux_ssh": {
+            "username": "user",
+            "password": ""
+        }
+    },
+    "industrial_vlan_lab": {
+        "name": "Industrial Purdue Model Lab",
+        "target_subnets": [
+            "10.10.10.0/24",
+            "10.10.20.0/24",
+            "10.10.30.0/24",
+            "10.10.40.0/24"
+        ],
+        "core_switches": [
+            "10.10.10.1",
+            "10.10.20.1",
+            "10.10.30.1",
+            "10.10.40.1"
+        ],
+        "passive_sniff_duration": 2.0,
+        "ssh": {
+            "username": "admin",
+            "password": ""
+        },
+        "snmp": {
+            "community": "public"
+        },
+        "allow_industrial_probing": true,
+        "vlans_to_scan": {
+            "10": "10.10.10.0/24",
+            "20": "10.10.20.0/24",
+            "30": "10.10.30.0/24",
+            "40": "10.10.40.0/24"
+        }
+    }
+}

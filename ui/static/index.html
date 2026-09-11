@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphPath | Autonomous Network Observability Plane</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Load D3.js (v7) for Force-Directed Graph Engine -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+
+    <!-- Main Navigation Header -->
+    <header class="dashboard-header">
+        <div class="brand-section">
+            <div class="brand-icon">🌐</div>
+            <div>
+                <h1 class="brand-title">GRAPHPATH // OBSERVABILITY PLANE</h1>
+                <div class="brand-subtitle">Real-Time D3 Force-Directed Physical-to-Logical Convergence</div>
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <input type="text" id="node-search" class="search-input" placeholder="Search IP, Host, Vendor..." autocomplete="off">
+            <button id="zoom-in-btn" class="control-btn" title="Zoom In">＋</button>
+            <button id="zoom-out-btn" class="control-btn" title="Zoom Out">－</button>
+            <button id="zoom-fit-btn" class="control-btn" title="Fit to Screen">⛶ Fit</button>
+            <button id="cluster-toggle-btn" class="control-btn" title="Toggle Physical VLAN Clustering">🔄 Cluster: VLAN</button>
+            <button id="scan-now-btn" class="control-btn scan-btn" title="Initiate Real-Time Discovery Sweep across all Purdue VLANs">⚡ SCAN NETWORK</button>
+            <button id="exec-mode-btn" class="control-btn exec-btn">⚡ EXECUTIVE MODE</button>
+            <div class="live-indicator">
+                <div class="pulse-dot"></div>
+                <span id="sync-status">LIVE SYNC (1000ms)</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Executive HUD Status Bar -->
+    <section class="executive-hud" id="executive-hud">
+        <div class="hud-metrics">
+            <div class="health-status" id="health-pill">
+                <span>🛡️</span>
+                <span id="hud-health">100% HEALTHY</span>
+            </div>
+            <div class="site-badge" id="hud-site">
+                <span>📍</span>
+                <span id="hud-site-text">Corporate Site</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Assets:</span>
+                <span class="hud-value" id="hud-total-nodes">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">OT / PLC:</span>
+                <span class="hud-value" id="hud-ot-nodes">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">CCTV:</span>
+                <span class="hud-value" id="hud-cctv-nodes">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Switches / Routers:</span>
+                <span class="hud-value" id="hud-infra-nodes">0</span>
+            </div>
+            <div class="hud-item">
+                <span class="hud-label">Active VLANs:</span>
+                <span class="hud-value" id="hud-vlans">0</span>
+            </div>
+            <div class="hud-item granular-metric">
+                <span class="hud-label">Security Alerts:</span>
+                <span class="hud-value" id="hud-alerts">0</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interactive D3 Canvas Container -->
+    <main id="graph-container">
+        <svg id="topology-svg"></svg>
+
+        <!-- Floating Legend Overlay -->
+        <div class="floating-legend" id="legend">
+            <div class="legend-title">Hardware Topology</div>
+            <div class="legend-grid">
+                <div class="legend-item"><span class="legend-color" style="background-color: var(--color-router);"></span> Router / GW</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: var(--color-switch);"></span> Managed Switch</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: var(--color-plc);"></span> Industrial PLC</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: var(--color-camera);"></span> CCTV / Camera</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: var(--color-server);"></span> Server / DC</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: var(--color-workstation);"></span> Workstation</div>
+            </div>
+        </div>
+
+        <!-- Tooltip Element -->
+        <div id="node-tooltip"></div>
+
+        <!-- Detailed Inspector Slide-Out Drawer -->
+        <aside id="node-inspector">
+            <button class="inspector-close" id="inspector-close-btn">&times;</button>
+            <h2 class="inspector-title" id="insp-title">Device Details</h2>
+            <div class="inspector-subtitle" id="insp-subtitle">Click on any node to inspect telemetry</div>
+            <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 12px 0;">
+
+            <div class="inspector-field">
+                <div class="inspector-field-label">IP Address</div>
+                <div class="inspector-field-value" id="insp-ip">-</div>
+            </div>
+            <div class="inspector-field">
+                <div class="inspector-field-label">Hardware MAC / Vendor</div>
+                <div class="inspector-field-value" id="insp-mac">-</div>
+            </div>
+            <div class="inspector-field">
+                <div class="inspector-field-label">Device Classification</div>
+                <div class="inspector-field-value" id="insp-type">-</div>
+            </div>
+            <div class="inspector-field">
+                <div class="inspector-field-label">VLAN & Zone</div>
+                <div class="inspector-field-value" id="insp-vlan">-</div>
+            </div>
+            <div class="inspector-field">
+                <div class="inspector-field-label">Physical Switch & Port Attachment</div>
+                <div class="inspector-field-value" id="insp-switch-pin">-</div>
+            </div>
+            <div class="inspector-field">
+                <div class="inspector-field-label">Civic Location</div>
+                <div class="inspector-field-value" id="insp-civic">-</div>
+            </div>
+            <div class="inspector-field">
+                <div class="inspector-field-label">GPS Coordinates & Geodetic Datum</div>
+                <div class="inspector-field-value" id="insp-coordinates">-</div>
+            </div>
+            <!-- Dedicated Physical Conductor & Spatial Telemetry Card -->
+            <div class="inspector-card" id="inspector-spatial-card">
+                <div class="inspector-card-header">
+                    <span class="inspector-card-icon">⚡</span>
+                    <span class="inspector-card-title">Physical Conductor & Spatial Telemetry</span>
+                </div>
+                <div class="spatial-telemetry-body" id="spatial-metrics-body">
+                    <div class="spatial-telemetry-grid">
+                        <div class="spatial-grid-item">
+                            <span class="spatial-grid-label">Cable Run</span>
+                            <span class="spatial-grid-val" id="insp-cable-run">-</span>
+                        </div>
+                        <div class="spatial-grid-item">
+                            <span class="spatial-grid-label">Gauge & Medium</span>
+                            <span class="spatial-grid-val" id="insp-medium">-</span>
+                        </div>
+                        <div class="spatial-grid-item">
+                            <span class="spatial-grid-label">Voltage Telemetry</span>
+                            <span class="spatial-grid-val" id="insp-voltage-drop">-</span>
+                        </div>
+                        <div class="spatial-grid-item">
+                            <span class="spatial-grid-label">TDR vs Branch</span>
+                            <span class="spatial-grid-val" id="insp-tdr-breakdown">-</span>
+                        </div>
+                        <div class="spatial-grid-item">
+                            <span class="spatial-grid-label">Uncertainty / Method</span>
+                            <span class="spatial-grid-val" id="insp-uncertainty">-</span>
+                        </div>
+                        <div class="spatial-grid-item">
+                            <span class="spatial-grid-label">Civic / Switch Pin</span>
+                            <span class="spatial-grid-val" id="insp-civic-pin">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="inspector-field">
+                <div class="inspector-field-label">Physical Spatial Path</div>
+                <div class="inspector-field-value" id="insp-spatial">-</div>
+            </div>
+            <div class="inspector-field granular-metric">
+                <div class="inspector-field-label">Socket State & Open Ports</div>
+                <div class="inspector-field-value" id="insp-ports">-</div>
+            </div>
+            <div class="inspector-field granular-metric">
+                <div class="inspector-field-label">Live Bandwidth Telemetry</div>
+                <div class="inspector-field-value" id="insp-bandwidth">-</div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- GraphPath Real-Time Force Engine Script -->
+    <script src="dashboard.js"></script>
+</body>
+</html>
+
