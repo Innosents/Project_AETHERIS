@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging / PyInstaller artifacts
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.spec
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing and coverage
+.cache
+.pytest_cache/
+.mypy_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.coverage
+.coverage.*
+htmlcov/
+
+# Dynamic Engine Caches & Telemetry (prevents index collisions)
+.bridge/
+spatial_ledger/
+geoip_cache.json
+device_identity_profiles.json.bak
+discovery_history/
+captures/
+exports/
+scans/
+logs/
+*.log
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
