@@ -1,18 +1,17 @@
 """
 GraphPath Discovery Engine
 Orchestrates active discovery sweeps, Bayesian evidence fusion,
-and recursive Kalman spatial distance estimation into GraphStore.
+passive L2 CDP/LLDP switch-tree mapping, and recursive Kalman spatial distance estimation.
 """
 
 from typing import Dict, Any, List, Optional
 from graphpath.topology.graph_store import GraphStore
 from graphpath.core.spatial_bayesian import BayesianEvidenceFusion
 from graphpath.discovery.spatial_kalman import SpatialKalmanEstimator
-from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
+from graphpath.discovery.passive_l2_listener import PassiveL2TopologyListener
 
 
 class DiscoveryEngine:
-    # Empirical kernel/firmware stack turnaround delays indexed by Archetype
     ARCHETYPE_STACK_LATENCIES_US = {
         "WINDOWS_HOST": 22.1,
         "VOIP_TELEPHONY": 16.5,
@@ -27,12 +26,61 @@ class DiscoveryEngine:
         self.prober_lead_m = prober_lead_m
         self.kalman = SpatialKalmanEstimator(default_nvp=0.69, default_asic_lat_us=1.2)
         self.switch_id = "default_core_switch"
+        self.l2_listener = PassiveL2TopologyListener(on_switch_discovered=self._handle_switch_discovered)
+
+    def _handle_switch_discovered(self, switch_data: Dict[str, Any]) -> None:
+        """Callback invoked when a CDP or LLDP packet is intercepted."""
+        sw_id = switch_data["switch_id"]
+        
+        # If prober was on default switch, bind to the first discovered physical switch
+        if self.switch_id == "default_core_switch":
+            self.switch_id = sw_id
+
+        self.graph.upsert_node(sw_id, {
+            "type": "SWITCH",
+            "protocol": switch_data.get("protocol"),
+            "chassis_id": switch_data.get("chassis_id"),
+            "system_name": switch_data.get("system_name"),
+            "port_id": switch_data.get("port_id"),
+            "management_ip": switch_data.get("management_ip"),
+            "archetype": "NETWORK_INFRASTRUCTURE"
+        })
+
+    def ingest_l2_packet(self, packet: Any) -> Optional[Dict[str, Any]]:
+        """Passively processes an ingested raw L2 frame."""
+        return self.l2_listener.process_packet(packet)
+
+    def register_switch_trunk(
+        self,
+        upstream_switch_id: str,
+        downstream_switch_id: str,
+        length_m: float,
+        media_type: str = "COPPER_CAT6A",
+        asic_latency_us: Optional[float] = None
+    ) -> str:
+        """Registers an inter-switch backbone/riser into Kalman and GraphStore."""
+        trunk_id = f"{upstream_switch_id}->{downstream_switch_id}"
+        self.kalman.register_trunk_link(
+            trunk_id=trunk_id,
+            length_m=length_m,
+            media_type=media_type,
+            asic_latency_us=asic_latency_us
+        )
+        self.graph.add_edge(
+            source=upstream_switch_id,
+            target=downstream_switch_id,
+            edge_type="TRUNK_RISER",
+            distance_m=length_m,
+            variance_m2=0.10,
+            confidence_pct=99.0,
+            is_anchor=True,
+            media_type=media_type
+        )
+        return trunk_id
 
     def register_switch_anchor(self, switch_id: str, anchor_target_id: str, true_distance_m: float, measurement_variance: float = 0.25) -> None:
-        """Pins a high-confidence anchor (e.g. PoE high-draw camera or known patch drop)."""
         link_id = f"{switch_id}->{anchor_target_id}"
         self.kalman.register_anchor(link_id, true_distance_m=true_distance_m, measurement_variance=measurement_variance)
-        
         self.graph.add_edge(
             source=switch_id,
             target=anchor_target_id,
@@ -49,43 +97,37 @@ class DiscoveryEngine:
         observed_telemetry_keys: List[str],
         rtt_samples_us: List[float],
         is_anchor: bool = False,
-        known_distance_m: Optional[float] = None
+        known_distance_m: Optional[float] = None,
+        parent_switch_id: Optional[str] = None,
+        path_trunk_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """
-        Executes evidence fusion, estimates physical cable length via Kalman state,
-        and pushes spatial state to GraphStore.
-        """
-        # 1. Classify Archetype via Bayesian Posterior Simplices
+        """Processes an endpoint drop; supports routing through multi-hop trunk paths."""
+        target_switch = parent_switch_id or self.switch_id
+        link_id = f"{target_switch}->{node_id}"
+
         posterior_probs = BayesianEvidenceFusion.fuse_evidence(observed_telemetry_keys)
         top_archetype = max(posterior_probs, key=posterior_probs.get)
-        
-        # Ingest inferred stack turnaround delay
         stack_latency_us = self.ARCHETYPE_STACK_LATENCIES_US.get(top_archetype, 15.0)
 
-        # 2. Register Node into GraphStore
         self.graph.upsert_node(node_id, {
             "archetype": top_archetype,
             "posteriors": posterior_probs,
             "stack_latency_us": stack_latency_us
         })
 
-        link_id = f"{self.switch_id}->{node_id}"
-
-        # 3. Spatial Resolution
         if is_anchor and known_distance_m is not None:
-            self.register_switch_anchor(self.switch_id, node_id, known_distance_m)
-            # Calibrate global NVP using the anchor's minimum clean RTT sample
+            self.register_switch_anchor(target_switch, node_id, known_distance_m)
             if rtt_samples_us:
                 min_rtt = min(rtt_samples_us)
                 self.kalman.calibrate_hyperparameters_from_anchor(
                     link_id=link_id,
                     observed_rtt_us=min_rtt,
                     target_stack_latency_us=stack_latency_us,
-                    prober_distance_m=self.prober_lead_m
+                    prober_distance_m=self.prober_lead_m,
+                    path_trunk_ids=path_trunk_ids
                 )
             spatial_state = self.kalman.links[link_id]
         else:
-            # Recursive update across observed RTT burst pulses
             spatial_state = None
             for rtt in rtt_samples_us:
                 spatial_state = self.kalman.update_link_rtt(
@@ -93,12 +135,13 @@ class DiscoveryEngine:
                     observed_rtt_us=rtt,
                     target_stack_latency_us=stack_latency_us,
                     measurement_jitter_us=0.05,
-                    prober_distance_m=self.prober_lead_m
+                    prober_distance_m=self.prober_lead_m,
+                    path_trunk_ids=path_trunk_ids
                 )
 
             if spatial_state:
                 self.graph.add_edge(
-                    source=self.switch_id,
+                    source=target_switch,
                     target=node_id,
                     edge_type="ETHERNET_LINK",
                     distance_m=round(spatial_state["distance"], 2),
@@ -109,6 +152,7 @@ class DiscoveryEngine:
 
         return {
             "node_id": node_id,
+            "parent_switch": target_switch,
             "archetype": top_archetype,
             "spatial_state": spatial_state,
             "global_nvp": self.kalman.nvp
