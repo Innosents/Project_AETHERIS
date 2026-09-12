@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project AETHERIS - L1 Physical Spatial Topology Visualizer</title>
+  <!-- Cytoscape Core & Layout Extensions -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/layout-base/layout-base.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cose-base/cose-base.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose/cytoscape-fcose.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --panel-bg: rgba(15, 23, 42, 0.85);
+      --border-color: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-indigo: #6366f1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #cy {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Telemetry HUD Overlay */
+    .hud-panel {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(12px);
+      padding: 16px 20px;
+      border-radius: 8px;
+      min-width: 320px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    .hud-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .hud-status-badge {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    .hud-stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .hud-stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hud-stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .hud-stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    /* Node/Edge Detail Inspector Card */
+    .inspector-panel {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 10;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      backdrop-filter: blur(12px);
+      padding: 16px 20px;
+      border-radius: 8px;
+      width: 360px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      display: none;
+    }
+
+    .inspector-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent-indigo);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .inspector-meta-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .inspector-meta-key {
+      color: var(--text-muted);
+    }
+
+    .inspector-meta-val {
+      font-family: monospace;
+      font-weight: 600;
+    }
+
+    /* Action Controls */
+    .control-toolbar {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-action {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+    }
+
+    .btn-action:hover {
+      background: var(--accent-indigo);
+      border-color: var(--accent-indigo);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="cy"></div>
+
+  <!-- HUD Telemetry Card -->
+  <div class="hud-panel">
+    <div class="hud-title">
+      <span>Spatial Telemetry Engine</span>
+      <div class="hud-status-badge"></div>
+    </div>
+    <div class="hud-stat-grid">
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Nodes Mapped</span>
+        <span class="hud-stat-value" id="stat-node-count">0</span>
+      </div>
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Total Cable Length</span>
+        <span class="hud-stat-value" id="stat-cable-m">0.0 m</span>
+      </div>
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Active Anchors</span>
+        <span class="hud-stat-value" id="stat-anchor-count">0</span>
+      </div>
+      <div class="hud-stat-item">
+        <span class="hud-stat-label">Global NVP</span>
+        <span class="hud-stat-value" id="stat-nvp">0.69 c</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Control Toolbar -->
+  <div class="control-toolbar">
+    <button class="btn-action" onclick="refitLayout()">Re-Fit Spatial Map</button>
+    <button class="btn-action" onclick="loadSimulationData()">Inject Telemetry Sweep</button>
+  </div>
+
+  <!-- Element Inspector Panel -->
+  <div class="inspector-panel" id="inspector">
+    <div class="inspector-title" id="inspector-type">Entity Inspector</div>
+    <div id="inspector-body"></div>
+  </div>
+
+  <script>
+    let cy = null;
+
+    // Node Archetype Color Palettes
+    const ARCHETYPE_COLORS = {
+      "SWITCH": "#6366f1",                 // Indigo
+      "NETWORK_INFRASTRUCTURE": "#6366f1", // Indigo
+      "CCTV_VIDEO": "#06b6d4",             // Cyan
+      "INDUSTRIAL_OT": "#f59e0b",           // Amber
+      "WINDOWS_HOST": "#3b82f6",            // Sky Blue
+      "LINUX_SERVER": "#10b981",            // Emerald
+      "VOIP_TELEPHONY": "#ec4899"           // Pink
+    };
+
+    function initCytoscape(elements) {
+      cy = cytoscape({
+        container: document.getElementById('cy'),
+        elements: elements,
+        boxSelectionEnabled: false,
+        autounselectify: false,
+        style: [
+          /* --- Base Node Styling --- */
+          {
+            selector: 'node',
+            style: {
+              'label': 'data(id)',
+              'color': '#f8fafc',
+              'font-size': '11px',
+              'font-weight': '600',
+              'text-valign': 'bottom',
+              'text-margin-y': 6,
+              'background-color': function(ele) {
+                const arch = ele.data('archetype') || ele.data('type') || 'WINDOWS_HOST';
+                return ARCHETYPE_COLORS[arch] || '#64748b';
+              },
+              'border-width': 2,
+              'border-color': '#ffffff',
+              'border-opacity': 0.3,
+              'width': function(ele) {
+                return (ele.data('type') === 'SWITCH' || ele.data('archetype') === 'NETWORK_INFRASTRUCTURE') ? 38 : 26;
+              },
+              'height': function(ele) {
+                return (ele.data('type') === 'SWITCH' || ele.data('archetype') === 'NETWORK_INFRASTRUCTURE') ? 38 : 26;
+              },
+              'shadow-blur': 12,
+              'shadow-color': function(ele) {
+                const arch = ele.data('archetype') || ele.data('type') || 'WINDOWS_HOST';
+                return ARCHETYPE_COLORS[arch] || '#64748b';
+              },
+              'shadow-opacity': 0.6
+            }
+          },
+          /* --- Base Edge Styling (Length & Confidence Gradient) --- */
+          {
+            selector: 'edge',
+            style: {
+              'curve-style': 'bezier',
+              'width': function(ele) {
+                return ele.data('edge_type') === 'TRUNK_RISER' ? 4 : 2;
+              },
+              'line-style': function(ele) {
+                return ele.data('edge_type') === 'TRUNK_RISER' ? 'dashed' : 'solid';
+              },
+              'line-color': function(ele) {
+                if (ele.data('edge_type') === 'TRUNK_RISER') return '#6366f1';
+                if (ele.data('is_anchor')) return '#10b981';
+
+                const conf = ele.data('confidence_pct') || 0;
+                if (conf >= 90.0) return '#10b981'; // High precision
+                if (conf >= 75.0) return '#f59e0b'; // Converging
+                return '#ef4444';                   // Uncalibrated / High Jitter
+              },
+              'target-arrow-shape': 'triangle',
+              'target-arrow-color': function(ele) {
+                if (ele.data('edge_type') === 'TRUNK_RISER') return '#6366f1';
+                return ele.data('is_anchor') ? '#10b981' : '#64748b';
+              },
+              'arrow-scale': 0.8,
+              'label': function(ele) {
+                const d = ele.data('distance_m');
+                const conf = ele.data('confidence_pct');
+                if (d !== undefined && d !== null) {
+                  return `${d.toFixed(1)}m (${conf ? Math.round(conf) : 0}%)`;
+                }
+                return '';
+              },
+              'font-size': '10px',
+              'font-family': 'monospace',
+              'font-weight': '600',
+              'color': '#cbd5e1',
+              'text-rotation': 'autorotate',
+              'text-margin-y': -8,
+              'text-background-color': '#090d16',
+              'text-background-opacity': 0.85,
+              'text-background-padding': '2px',
+              'text-background-shape': 'roundrectangle'
+            }
+          },
+          /* --- Selected State --- */
+          {
+            selector: ':selected',
+            style: {
+              'border-width': 3,
+              'border-color': '#38bdf8',
+              'border-opacity': 1.0,
+              'line-color': '#38bdf8',
+              'target-arrow-color': '#38bdf8',
+              'shadow-blur': 20,
+              'shadow-color': '#38bdf8'
+            }
+          }
+        ],
+        layout: {
+          name: 'fcose',
+          quality: 'proof',
+          randomize: false,
+          animate: true,
+          animationDuration: 800,
+          nodeSeparation: 120,
+          idealEdgeLength: function(edge) {
+            // Physically scale edge render distance to estimated cable drop meters
+            const dist = edge.data('distance_m') || 25;
+            return Math.max(80, Math.min(300, dist * 3.5));
+          }
+        }
+      });
+
+      // Hook Inspector Details
+      cy.on('tap', 'node', function(evt) {
+        showNodeInspector(evt.target.data());
+      });
+
+      cy.on('tap', 'edge', function(evt) {
+        showEdgeInspector(evt.target.data());
+      });
+
+      cy.on('tap', function(evt) {
+        if (evt.target === cy) {
+          document.getElementById('inspector').style.display = 'none';
+        }
+      });
+
+      updateHUDTelemetry();
+    }
+
+    function refitLayout() {
+      if (!cy) return;
+      cy.layout({
+        name: 'fcose',
+        animate: true,
+        animationDuration: 500,
+        nodeSeparation: 120,
+        idealEdgeLength: function(edge) {
+          const dist = edge.data('distance_m') || 25;
+          return Math.max(80, Math.min(300, dist * 3.5));
+        }
+      }).run();
+    }
+
+    function updateHUDTelemetry() {
+      if (!cy) return;
+      const nodes = cy.nodes();
+      const edges = cy.edges();
+
+      let totalMeters = 0.0;
+      let anchorCount = 0;
+
+      edges.forEach(e => {
+        const d = parseFloat(e.data('distance_m')) || 0.0;
+        totalMeters += d;
+        if (e.data('is_anchor')) anchorCount++;
+      });
+
+      document.getElementById('stat-node-count').textContent = nodes.length;
+      document.getElementById('stat-cable-m').textContent = `${totalMeters.toFixed(1)} m`;
+      document.getElementById('stat-anchor-count').textContent = anchorCount;
+    }
+
+    function showNodeInspector(data) {
+      const panel = document.getElementById('inspector');
+      const title = document.getElementById('inspector-type');
+      const body = document.getElementById('inspector-body');
+
+      title.textContent = `Node: ${data.id}`;
+      let rows = `
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Type</span><span class="inspector-meta-val">${data.type || 'ENDPOINT'}</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Archetype</span><span class="inspector-meta-val">${data.archetype || 'UNKNOWN'}</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Stack Latency</span><span class="inspector-meta-val">${data.stack_latency_us || 0.0} µs</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Management IP</span><span class="inspector-meta-val">${data.management_ip || 'N/A'}</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Switch Port</span><span class="inspector-meta-val">${data.port_id || 'N/A'}</span></div>
+      `;
+      body.innerHTML = rows;
+      panel.style.display = 'block';
+    }
+
+    function showEdgeInspector(data) {
+      const panel = document.getElementById('inspector');
+      const title = document.getElementById('inspector-type');
+      const body = document.getElementById('inspector-body');
+
+      title.textContent = `Link: ${data.source} → ${data.target}`;
+      let rows = `
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Link Type</span><span class="inspector-meta-val">${data.edge_type || data.type}</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Physical Distance</span><span class="inspector-meta-val">${(data.distance_m || 0).toFixed(2)} m</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Variance (σ²)</span><span class="inspector-meta-val">${(data.variance_m2 || 0).toFixed(4)} m²</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Confidence</span><span class="inspector-meta-val" style="color: ${data.confidence_pct >= 85 ? 'var(--accent-green)' : 'var(--accent-amber)'}">${data.confidence_pct || 0}%</span></div>
+        <div class="inspector-meta-row"><span class="inspector-meta-key">Is Anchor</span><span class="inspector-meta-val">${data.is_anchor ? 'TRUE' : 'FALSE'}</span></div>
+      `;
+      body.innerHTML = rows;
+      panel.style.display = 'block';
+    }
+
+    // Ingests a multi-tier enterprise switch tree with converging Kalman distances
+    function loadSimulationData() {
+      const sampleGraph = [
+        // Nodes
+        { data: { id: "SW-CORE-3850", type: "SWITCH", archetype: "NETWORK_INFRASTRUCTURE", management_ip: "10.0.0.1", port_id: "Chassis" } },
+        { data: { id: "SW-ACCESS-IDF1", type: "SWITCH", archetype: "NETWORK_INFRASTRUCTURE", management_ip: "10.0.1.1", port_id: "Te1/1/1" } },
+        { data: { id: "PTZ-CAM-NORTH", type: "ENDPOINT", archetype: "CCTV_VIDEO", stack_latency_us: 18.2, port_id: "Gi1/0/1" } },
+        { data: { id: "WORKSTATION-ENG-01", type: "ENDPOINT", archetype: "WINDOWS_HOST", stack_latency_us: 22.1, port_id: "Gi1/0/12" } },
+        { data: { id: "PLC-SIEMENS-S7", type: "ENDPOINT", archetype: "INDUSTRIAL_OT", stack_latency_us: 8.4, port_id: "Gi1/0/24" } },
+        { data: { id: "AP-CORRIDOR-2F", type: "ENDPOINT", archetype: "LINUX_SERVER", stack_latency_us: 14.2, port_id: "Gi1/0/48" } },
+
+        // Edges (Physical Cable Runs & Risers)
+        {
+          data: {
+            id: "SW-CORE-3850->SW-ACCESS-IDF1",
+            source: "SW-CORE-3850",
+            target: "SW-ACCESS-IDF1",
+            edge_type: "TRUNK_RISER",
+            distance_m: 85.0,
+            variance_m2: 0.10,
+            confidence_pct: 99.0,
+            is_anchor: true
+          }
+        },
+        {
+          data: {
+            id: "SW-CORE-3850->PTZ-CAM-NORTH",
+            source: "SW-CORE-3850",
+            target: "PTZ-CAM-NORTH",
+            edge_type: "ETHERNET_ANCHOR",
+            distance_m: 52.4,
+            variance_m2: 0.25,
+            confidence_pct: 98.2,
+            is_anchor: true
+          }
+        },
+        {
+          data: {
+            id: "SW-CORE-3850->WORKSTATION-ENG-01",
+            source: "SW-CORE-3850",
+            target: "WORKSTATION-ENG-01",
+            edge_type: "ETHERNET_LINK",
+            distance_m: 23.8,
+            variance_m2: 1.45,
+            confidence_pct: 82.5,
+            is_anchor: false
+          }
+        },
+        {
+          data: {
+            id: "SW-ACCESS-IDF1->PLC-SIEMENS-S7",
+            source: "SW-ACCESS-IDF1",
+            target: "PLC-SIEMENS-S7",
+            edge_type: "ETHERNET_LINK",
+            distance_m: 14.2,
+            variance_m2: 0.42,
+            confidence_pct: 89.0,
+            is_anchor: false
+          }
+        },
+        {
+          data: {
+            id: "SW-ACCESS-IDF1->AP-CORRIDOR-2F",
+            source: "SW-ACCESS-IDF1",
+            target: "AP-CORRIDOR-2F",
+            edge_type: "ETHERNET_LINK",
+            distance_m: 41.6,
+            variance_m2: 3.12,
+            confidence_pct: 71.4,
+            is_anchor: false
+          }
+        }
+      ];
+
+      if (cy) {
+        cy.elements().remove();
+        cy.add(sampleGraph);
+        refitLayout();
+        updateHUDTelemetry();
+      } else {
+        initCytoscape(sampleGraph);
+      }
+    }
+
+    // Auto-bootstrap
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSimulationData();
+    });
+  </script>
+</body>
+</html>
