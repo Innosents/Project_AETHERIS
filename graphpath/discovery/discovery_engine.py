@@ -1,7 +1,8 @@
 """
 GraphPath Discovery Engine
 Orchestrates active discovery sweeps, Bayesian evidence fusion,
-passive L2 CDP/LLDP switch-tree mapping, and recursive Kalman spatial distance estimation.
+passive L2 CDP/LLDP switch-tree mapping, raw socket Npcap packet tapping,
+and recursive Kalman spatial distance estimation.
 """
 
 from typing import Dict, Any, List, Optional
@@ -9,6 +10,7 @@ from graphpath.topology.graph_store import GraphStore
 from graphpath.core.spatial_bayesian import BayesianEvidenceFusion
 from graphpath.discovery.spatial_kalman import SpatialKalmanEstimator
 from graphpath.discovery.passive_l2_listener import PassiveL2TopologyListener
+from graphpath.discovery.raw_packet_tap import RawPacketTap
 
 
 class DiscoveryEngine:
@@ -21,18 +23,39 @@ class DiscoveryEngine:
         "LINUX_SERVER": 14.2,
     }
 
-    def __init__(self, graph_store: Optional[GraphStore] = None, prober_lead_m: float = 2.0):
+    def __init__(
+        self,
+        graph_store: Optional[GraphStore] = None,
+        prober_lead_m: float = 2.0,
+        interface: Optional[str] = None,
+        enable_tap: bool = False
+    ):
         self.graph = graph_store or GraphStore()
         self.prober_lead_m = prober_lead_m
         self.kalman = SpatialKalmanEstimator(default_nvp=0.69, default_asic_lat_us=1.2)
         self.switch_id = "default_core_switch"
         self.l2_listener = PassiveL2TopologyListener(on_switch_discovered=self._handle_switch_discovered)
 
+        # Low-level raw packet tap
+        self.packet_tap = RawPacketTap(
+            interface=interface,
+            on_packet_received=self.ingest_l2_packet
+        ) if enable_tap else None
+
+    def start_network_tap(self) -> None:
+        """Activates promiscuous packet capture for L2 discovery and RTT tapping."""
+        if self.packet_tap:
+            self.packet_tap.start_listener()
+
+    def stop_network_tap(self) -> None:
+        """Deactivates packet capture."""
+        if self.packet_tap:
+            self.packet_tap.stop_listener()
+
     def _handle_switch_discovered(self, switch_data: Dict[str, Any]) -> None:
         """Callback invoked when a CDP or LLDP packet is intercepted."""
         sw_id = switch_data["switch_id"]
         
-        # If prober was on default switch, bind to the first discovered physical switch
         if self.switch_id == "default_core_switch":
             self.switch_id = sw_id
 
@@ -50,6 +73,37 @@ class DiscoveryEngine:
         """Passively processes an ingested raw L2 frame."""
         return self.l2_listener.process_packet(packet)
 
+    def probe_and_calibrate_endpoint(
+        self,
+        target_ip: str,
+        target_port: int,
+        node_id: str,
+        observed_telemetry_keys: List[str],
+        burst_count: int = 5,
+        parent_switch_id: Optional[str] = None,
+        path_trunk_ids: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Fires hardware-timed RTT bursts via RawPacketTap, fuses evidence,
+        and estimates physical cable length into GraphStore.
+        """
+        if self.packet_tap:
+            rtt_samples = self.packet_tap.execute_rtt_pulse_burst(
+                target_ip=target_ip,
+                target_port=target_port,
+                burst_count=burst_count
+            )
+        else:
+            rtt_samples = []
+
+        return self.process_discovered_node(
+            node_id=node_id,
+            observed_telemetry_keys=observed_telemetry_keys,
+            rtt_samples_us=rtt_samples,
+            parent_switch_id=parent_switch_id,
+            path_trunk_ids=path_trunk_ids
+        )
+
     def register_switch_trunk(
         self,
         upstream_switch_id: str,
@@ -58,7 +112,6 @@ class DiscoveryEngine:
         media_type: str = "COPPER_CAT6A",
         asic_latency_us: Optional[float] = None
     ) -> str:
-        """Registers an inter-switch backbone/riser into Kalman and GraphStore."""
         trunk_id = f"{upstream_switch_id}->{downstream_switch_id}"
         self.kalman.register_trunk_link(
             trunk_id=trunk_id,
@@ -101,7 +154,6 @@ class DiscoveryEngine:
         parent_switch_id: Optional[str] = None,
         path_trunk_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Processes an endpoint drop; supports routing through multi-hop trunk paths."""
         target_switch = parent_switch_id or self.switch_id
         link_id = f"{target_switch}->{node_id}"
 
