@@ -59,6 +59,11 @@ exports/
 scans/
 logs/
 *.log
+.venv/
+__pycache__/
+*.pyc
+.session_secret.dat
+spatial_ledger.db
 
 # Operating System & IDE
 .DS_Store

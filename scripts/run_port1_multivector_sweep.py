@@ -4,6 +4,16 @@ Executes active dual-payload serialization probing (64B vs 1400B ICMP) and
 passive TCP SYN/ACK / DHCP Option 55 OS stack classification for Port 1 endpoints.
 Persists results directly into spatial_ledger.db.
 """
+import logging
+import warnings
+warnings.filterwarnings("ignore")
+
+# Silence all Scapy runtime and route-resolution loggers
+logging.getLogger("scapy").setLevel(logging.ERROR)
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+
+from scapy.config import conf
+conf.verb = 0
 
 import sys
 import sqlite3

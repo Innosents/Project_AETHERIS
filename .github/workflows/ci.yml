@@ -1,4 +1,4 @@
-name: Project Aetherius CI Pipeline
+name: Project AETHERIS CI Pipeline
 
 on:
   push:
