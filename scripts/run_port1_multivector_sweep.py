@@ -14,6 +14,7 @@ logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 
 from scapy.config import conf
 conf.verb = 0
+conf.warning_level = 0
 
 import sys
 import sqlite3
