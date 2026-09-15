@@ -3,7 +3,7 @@ import sqlite3
 conn = sqlite3.connect("spatial_ledger.db")
 c = conn.cursor()
 
-c.execute("""
+cur.execute("""
 CREATE TABLE IF NOT EXISTS switchport_mappings (
     switch_ip TEXT NOT NULL,
     mac_address TEXT NOT NULL,
@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS switchport_mappings (
     discovery_method TEXT DEFAULT "bridge_fdb_snmp",
     updated_at TEXT NOT NULL,
     PRIMARY KEY (switch_ip, mac_address)
+    mac TEXT PRIMARY KEY,
+    ip TEXT,
+    switchport TEXT,
+    vlan INTEGER,
+    is_trunk BOOLEAN
 )
 """)
 
