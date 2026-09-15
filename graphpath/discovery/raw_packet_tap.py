@@ -10,7 +10,10 @@ from typing import Dict, Any, List, Optional, Callable
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, TCP
 from scapy.sendrecv import sendp, AsyncSniffer
-from scapy.arch.windows import get_windows_if_list
+try:
+    from scapy.arch.windows import get_windows_if_list
+except (ImportError, ModuleNotFoundError):
+    get_windows_if_list = None
 
 
 class RawPacketTap:
@@ -29,15 +32,26 @@ class RawPacketTap:
 
     @staticmethod
     def _detect_default_interface() -> Optional[str]:
+        if get_windows_if_list is not None:
+            try:
+                interfaces = get_windows_if_list()
+                for iface in interfaces:
+                    name = iface.get("name", "")
+                    desc = iface.get("description", "").lower()
+                    if ("ethernet" in desc or "realtek" in desc or "intel" in desc) and iface.get("ips"):
+                        return name
+                if interfaces:
+                    return interfaces[0].get("name")
+            except Exception:
+                pass
         try:
-            interfaces = get_windows_if_list()
-            for iface in interfaces:
-                name = iface.get("name", "")
-                desc = iface.get("description", "").lower()
-                if ("ethernet" in desc or "realtek" in desc or "intel" in desc) and iface.get("ips"):
-                    return name
-            if interfaces:
-                return interfaces[0].get("name")
+            from scapy.config import conf
+            if conf.iface:
+                return getattr(conf.iface, "name", str(conf.iface))
+            from scapy.interfaces import get_if_list
+            ifaces = get_if_list()
+            if ifaces:
+                return ifaces[0]
         except Exception:
             pass
         return None

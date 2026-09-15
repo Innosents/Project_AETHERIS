@@ -15,7 +15,30 @@ import json
 import math
 import struct
 import unittest
-from hypothesis import given, settings, strategies as st
+try:
+    from hypothesis import given, settings, strategies as st
+    HAS_HYPOTHESIS = True
+except (ImportError, ModuleNotFoundError):
+    HAS_HYPOTHESIS = False
+
+    def given(*args, **kwargs):
+        def decorator(func):
+            return unittest.skip("hypothesis not installed; fuzz suite skipped")(func)
+        return decorator
+
+    def settings(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
+    class _DummyStrategies:
+        def __getattr__(self, name):
+            return lambda *a, **kw: None
+        def composite(self, func):
+            return lambda *a, **kw: None
+
+    st = _DummyStrategies()
+
 
 from graphpath.core.fingerprinting.dpi_decoders import (
     UbntDiscoveryDecoder,
