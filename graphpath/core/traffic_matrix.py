@@ -1,6 +1,6 @@
 """
-GraphPath Traffic Matrix & Dependency Flow Engine
-Subsystem II Bleeding-Edge Refactor (Project AETHERIS).
+Project AETHERIS - Traffic Matrix & Dependency Flow Engine
+Subsystem II Bleeding-Edge Refactor.
 
 Aggregates packet streams into directional conversation pairs, computes flow statistics,
 identifies top talkers, and infers client-server roles based on traffic patterns.
@@ -12,7 +12,83 @@ LRU flow eviction to eliminate global mutex contention under high-throughput cap
 from __future__ import annotations
 import threading
 import time
+from collections import OrderedDict
 from typing import Dict, Any, List, Optional, Tuple, Set
+
+try:
+    from graphpath.discovery.geolocation_engine import LldpMedLocationDecoder
+except ImportError:
+    try:
+        from discovery.geolocation_engine import LldpMedLocationDecoder
+    except ImportError:
+        LldpMedLocationDecoder = None
+
+
+class ShardedCivicCache:
+    """
+    32-partition LRU lookaside cache mapping IP addresses to LLDP-MED Civic Address vectors.
+    Partitioning eliminates mutex contention under concurrent packet ingestion across worker threads.
+    """
+
+    def __init__(self, num_shards: int = 32, max_entries_per_shard: int = 1024):
+        self.num_shards = num_shards
+        self.max_entries_per_shard = max_entries_per_shard
+        self._locks = [threading.Lock() for _ in range(num_shards)]
+        self._partitions: List[OrderedDict[str, Dict[str, Any]]] = [
+            OrderedDict() for _ in range(num_shards)
+        ]
+
+    def _get_shard_idx(self, ip: str) -> int:
+        return hash(ip) % self.num_shards
+
+    def get(self, ip: str) -> Optional[Dict[str, Any]]:
+        """Retrieves cached civic vector for given IP with LRU promotion under localized partition lock."""
+        if not ip:
+            return None
+        shard_idx = self._get_shard_idx(ip)
+        with self._locks[shard_idx]:
+            partition = self._partitions[shard_idx]
+            if ip in partition:
+                partition.move_to_end(ip)
+                return dict(partition[ip])
+            return None
+
+    def set(self, ip: str, civic: Dict[str, Any]) -> None:
+        """Stores or updates civic vector for given IP with LRU eviction under localized partition lock."""
+        if not ip or not isinstance(civic, dict):
+            return
+        shard_idx = self._get_shard_idx(ip)
+        with self._locks[shard_idx]:
+            partition = self._partitions[shard_idx]
+            if ip in partition:
+                partition.move_to_end(ip)
+                partition[ip] = dict(civic)
+            else:
+                if len(partition) >= self.max_entries_per_shard:
+                    partition.popitem(last=False)
+                partition[ip] = dict(civic)
+
+    def clear(self) -> None:
+        """Flushes all civic cache partitions."""
+        for i in range(self.num_shards):
+            with self._locks[i]:
+                self._partitions[i].clear()
+
+    def size(self) -> int:
+        """Returns total entries across all partitions."""
+        total = 0
+        for i in range(self.num_shards):
+            with self._locks[i]:
+                total += len(self._partitions[i])
+        return total
+
+    def all_entries(self) -> Dict[str, Dict[str, Any]]:
+        """Returns a snapshot of all cached IP to civic vector mappings."""
+        combined: Dict[str, Dict[str, Any]] = {}
+        for i in range(self.num_shards):
+            with self._locks[i]:
+                combined.update(dict(self._partitions[i]))
+        return combined
 
 
 class TrafficFlowShard:
@@ -66,6 +142,7 @@ class TrafficMatrixTracker:
     """
     High-throughput collector for Layer 4-7 traffic flows and node conversation metrics.
     Partitions flows across 32 independent shards to eliminate cross-thread lock contention.
+    Enriched with 32-partition LRU lookaside civic address caching and physical spatial vector tracking.
     """
 
     NUM_SHARDS: int = 32
@@ -79,6 +156,10 @@ class TrafficMatrixTracker:
         self._shards: List[TrafficFlowShard] = [
             TrafficFlowShard(max_flows=shard_capacity) for _ in range(self.NUM_SHARDS)
         ]
+        self._civic_cache = ShardedCivicCache(
+            num_shards=self.NUM_SHARDS,
+            max_entries_per_shard=1024
+        )
 
         # Background eviction daemon
         self._stop_eviction = threading.Event()
@@ -105,6 +186,24 @@ class TrafficMatrixTracker:
             for shard in self._shards:
                 with shard.lock:
                     shard.prune_expired(cutoff)
+
+    def register_civic_location(self, ip: str, civic: Dict[str, Any]) -> None:
+        """Registers or updates decoded LLDP-MED civic location for an IP address into lookaside cache."""
+        if not ip or not isinstance(civic, dict):
+            return
+        if LldpMedLocationDecoder:
+            norm_civic = LldpMedLocationDecoder.normalize_civic_address(civic)
+        else:
+            norm_civic = dict(civic)
+        self._civic_cache.set(ip, norm_civic)
+
+    def get_civic_location(self, ip: str) -> Optional[Dict[str, Any]]:
+        """Retrieves cached civic location vector for an IP address."""
+        return self._civic_cache.get(ip)
+
+    def clear_civic_cache(self) -> None:
+        """Flushes all entries from lookaside civic cache."""
+        self._civic_cache.clear()
 
     @property
     def flows(self) -> Dict[Tuple[str, str, int, str], Dict[str, Any]]:
@@ -149,15 +248,46 @@ class TrafficMatrixTracker:
         byte_count: int = 0,
         app_proto: str = "",
         domain: str = "",
-        hostname: str = ""
+        hostname: str = "",
+        src_civic: Optional[Dict[str, Any]] = None,
+        dst_civic: Optional[Dict[str, Any]] = None,
+        latency_us: float = 0.0
     ) -> None:
         """
         Records an active packet flow between two endpoints into designated shard.
         Acquires only the localized shard lock, guaranteeing zero lock contention
         across disparate connection hashes.
+        Enriches flow with LLDP-MED civic location vectors and evaluates spatial anomalies.
         """
         if not src_ip or not dst_ip or src_ip == dst_ip:
             return
+
+        # 1. Update / retrieve civic vectors via zero-lock sharded lookaside cache
+        if src_civic and isinstance(src_civic, dict):
+            if LldpMedLocationDecoder:
+                src_civic = LldpMedLocationDecoder.normalize_civic_address(src_civic)
+            self._civic_cache.set(src_ip, src_civic)
+        else:
+            src_civic = self._civic_cache.get(src_ip)
+
+        if dst_civic and isinstance(dst_civic, dict):
+            if LldpMedLocationDecoder:
+                dst_civic = LldpMedLocationDecoder.normalize_civic_address(dst_civic)
+            self._civic_cache.set(dst_ip, dst_civic)
+        else:
+            dst_civic = self._civic_cache.get(dst_ip)
+
+        # 2. Compute spatial physical vector if both civic endpoints are known
+        physical_vector = None
+        spatial_flags: List[str] = []
+        if src_civic and dst_civic and LldpMedLocationDecoder:
+            physical_vector = LldpMedLocationDecoder.compute_physical_vector(
+                src_civic=src_civic,
+                dst_civic=dst_civic,
+                latency_us=latency_us,
+                byte_count=byte_count
+            )
+            spatial_flags = physical_vector.get("flags", [])
 
         flow_key = (src_ip, dst_ip, port, proto)
         shard = self._get_shard(flow_key)
@@ -179,7 +309,12 @@ class TrafficMatrixTracker:
                     "last_seen": now,
                     "app_proto": app_proto,
                     "domain": domain,
-                    "hostname": hostname
+                    "hostname": hostname,
+                    "src_civic": src_civic,
+                    "dst_civic": dst_civic,
+                    "physical_vector": physical_vector,
+                    "spatial_flags": list(spatial_flags),
+                    "latency_us": float(latency_us)
                 }
 
             entry = shard.flows[flow_key]
@@ -192,6 +327,27 @@ class TrafficMatrixTracker:
                 entry["domain"] = domain
             if hostname and not entry["hostname"]:
                 entry["hostname"] = hostname
+            if latency_us > 0:
+                entry["latency_us"] = float(latency_us)
+
+            # Re-evaluate or update physical spatial vector if newly available
+            if src_civic and not entry.get("src_civic"):
+                entry["src_civic"] = src_civic
+            if dst_civic and not entry.get("dst_civic"):
+                entry["dst_civic"] = dst_civic
+
+            eff_src = entry.get("src_civic") or src_civic
+            eff_dst = entry.get("dst_civic") or dst_civic
+            if eff_src and eff_dst and LldpMedLocationDecoder:
+                eff_lat = float(latency_us) if latency_us > 0 else float(entry.get("latency_us", 0.0))
+                pv = LldpMedLocationDecoder.compute_physical_vector(
+                    src_civic=eff_src,
+                    dst_civic=eff_dst,
+                    latency_us=eff_lat,
+                    byte_count=entry["bytes"]
+                )
+                entry["physical_vector"] = pv
+                entry["spatial_flags"] = pv.get("flags", [])
 
             # Update localized host statistics
             if src_ip not in shard.host_stats:
@@ -229,6 +385,28 @@ class TrafficMatrixTracker:
             {"ip": ip, **h_stats, "total_bytes": h_stats["tx_bytes"] + h_stats["rx_bytes"]}
             for ip, h_stats in sorted_hosts[:limit]
         ]
+
+    def get_spatial_flows(self) -> List[Dict[str, Any]]:
+        """Returns all active flows across shards that contain physical spatial vectors."""
+        results = []
+        for shard in self._shards:
+            with shard.lock:
+                for flow in shard.flows.values():
+                    if flow.get("physical_vector") is not None:
+                        results.append(dict(flow))
+        return results
+
+    def get_flagged_flows(self, flag_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Returns all active flows with spatial anomaly flags (e.g., tromboning, perimeter breach)."""
+        results = []
+        for shard in self._shards:
+            with shard.lock:
+                for flow in shard.flows.values():
+                    flags = flow.get("spatial_flags", [])
+                    if flags:
+                        if flag_filter is None or flag_filter in flags:
+                            results.append(dict(flow))
+        return results
 
     def get_conversation_edges(self) -> List[Dict[str, Any]]:
         """
@@ -277,6 +455,8 @@ class TrafficMatrixTracker:
         total_flows = 0
         total_pkts = 0
         total_bytes = 0
+        spatial_flows = 0
+        flagged_flows = 0
 
         for shard in self._shards:
             with shard.lock:
@@ -284,12 +464,19 @@ class TrafficMatrixTracker:
                 for f in shard.flows.values():
                     total_pkts += f["packets"]
                     total_bytes += f["bytes"]
+                    if f.get("physical_vector") is not None:
+                        spatial_flows += 1
+                    if f.get("spatial_flags"):
+                        flagged_flows += 1
 
         return {
             "active_flows_count": total_flows,
             "tracked_hosts_count": len(self.host_stats),
             "total_packets": total_pkts,
-            "total_bytes": total_bytes
+            "total_bytes": total_bytes,
+            "civic_cache_size": self._civic_cache.size(),
+            "spatial_flows_count": spatial_flows,
+            "flagged_flows_count": flagged_flows
         }
 
 

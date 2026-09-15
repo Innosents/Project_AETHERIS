@@ -1,5 +1,5 @@
 """
-GraphPath Deep Protocol Prober Engine
+Project AETHERIS - Deep Protocol Prober Engine
 Provides targeted protocol handshakes and identity extraction for deep host fingerprinting.
 """
 
@@ -308,4 +308,78 @@ class MercuryMspProber:
                     }
         except Exception:
             pass
+        return {}
+
+class SshProber:
+    @staticmethod
+    def probe_ssh_banner(ip: str, port: int = 22, timeout: float = 0.5) -> Dict[str, Any]:
+        """Extracts SSH identification string without authenticating (e.g. OpenSSH_8.9p1 Ubuntu-3ubuntu0.7)."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                if s.connect_ex((ip, port)) == 0:
+                    banner = s.recv(256).decode("latin-1", errors="ignore").strip()
+                    if banner.startswith("SSH-"):
+                        distro = "Linux"
+                        if "ubuntu" in banner.lower():
+                            distro = "Ubuntu Linux"
+                        elif "debian" in banner.lower():
+                            distro = "Debian Linux"
+                        elif "raspbian" in banner.lower():
+                            distro = "Raspberry Pi OS"
+                        elif "freebsd" in banner.lower():
+                            distro = "FreeBSD"
+                        
+                        return {
+                            "protocol": "SSH",
+                            "banner": banner,
+                            "os_hint": distro,
+                            "type": "server"
+                        }
+        except Exception:
+            pass
+        return {}
+
+class HttpTitleProber:
+    @staticmethod
+    def probe_web_identity(ip: str, ports: list = [80, 8080, 443], timeout: float = 0.5) -> Dict[str, Any]:
+        """Inspects HTTP Server headers and <title> tags to extract exact device models."""
+        for port in ports:
+            use_ssl = port in (443, 8443)
+            try:
+                raw_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                raw_sock.settimeout(timeout)
+                if raw_sock.connect_ex((ip, port)) != 0:
+                    raw_sock.close()
+                    continue
+
+                if use_ssl:
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    s = ctx.wrap_socket(raw_sock, server_hostname=ip)
+                else:
+                    s = raw_sock
+
+                req = f"GET / HTTP/1.1\r\nHost: {ip}\r\nUser-Agent: Mozilla/5.0 (AETHERIS-Probe)\r\nConnection: close\r\n\r\n".encode()
+                s.sendall(req)
+                resp = s.recv(2048).decode("latin-1", errors="ignore")
+                s.close()
+
+                # Extract Server & Title
+                server_m = re.search(r'Server:\s*([^\r\n]+)', resp, re.I)
+                title_m = re.search(r'<title>(.*?)</title>', resp, re.I | re.DOTALL)
+                
+                server = server_m.group(1).strip() if server_m else ""
+                title = title_m.group(1).strip() if title_m else ""
+
+                if server or title:
+                    return {
+                        "port": port,
+                        "server": server,
+                        "title": title,
+                        "protocol": "HTTPS" if use_ssl else "HTTP"
+                    }
+            except Exception:
+                pass
         return {}

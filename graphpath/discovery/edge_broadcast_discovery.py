@@ -1,5 +1,5 @@
 """
-GraphPath Edge Node Broadcast & Multicast Discovery Engine
+Project AETHERIS - Edge Node Broadcast & Multicast Discovery Engine
 Dispatches targeted protocol broadcasts (SIP PnP, WS-Discovery/ONVIF, SSDP, mDNS, 
 Ubiquiti/MikroTik discovery, BACnet, EtherNet/IP) based on identified device profiles 
 to uncover dormant or silent edge nodes on the network segment.

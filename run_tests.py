@@ -1,5 +1,5 @@
 """
-GraphPath Unified Test Suite Runner (Clean Package Layout)
+Project AETHERIS Unified Test Suite Runner (Clean Package Layout)
 """
 
 import sys
@@ -14,17 +14,15 @@ def run_suite(suite_name: str = "all", verbosity: int = 2) -> bool:
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
 
-    test_modules = []
     if suite_name in ("all", "unit"):
-        test_modules.extend([
-            # Add test modules as they are ported into tests/
-        ])
+        discovered = loader.discover(start_dir=str(ROOT_DIR / "tests"), pattern="test_*.py")
+        suite.addTests(discovered)
 
     print("=" * 70)
-    print(f"  GraphPath Test Runner — Executing [{suite_name.upper()}] Suite")
+    print(f"  Project AETHERIS Test Runner — Executing [{suite_name.upper()}] Suite")
     print("=" * 70)
 
-    if not test_modules:
+    if suite.countTestCases() == 0:
         print("  [!] No test modules registered yet. Ready for test implementation.")
         return True
 
@@ -33,7 +31,7 @@ def run_suite(suite_name: str = "all", verbosity: int = 2) -> bool:
     return result.wasSuccessful()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="GraphPath Test Runner")
+    parser = argparse.ArgumentParser(description="Project AETHERIS Test Runner")
     parser.add_argument("--suite", choices=["all", "unit"], default="all")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()

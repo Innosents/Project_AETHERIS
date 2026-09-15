@@ -2,6 +2,7 @@
 Unit Tests for RawPacketTap Kernel-Level Timestamp Extraction
 """
 
+import time
 import unittest
 from scapy.layers.inet import IP, TCP
 from graphpath.discovery.raw_packet_tap import RawPacketTap
@@ -13,31 +14,28 @@ class TestRawPacketTap(unittest.TestCase):
         self.tap = RawPacketTap(interface="loopback")
 
     def test_packet_matching_and_rtt_extraction(self):
-        # Register a pending probe key
         target_ip = "192.168.1.50"
         target_port = 80
         source_port = 54321
         probe_key = f"{target_ip}:{target_port}:{source_port}"
 
-        tx_time = 1000.000000
+        # Pre-construct frame to eliminate interpreter build overhead
+        response_pkt = IP(src=target_ip, dst="192.168.1.10") / TCP(sport=target_port, dport=source_port, flags="SA")
+
+        # Set tx_ns relative to immediate execution
+        simulated_flight_us = 150.0
         self.tap._pending_probes[probe_key] = {
-            "tx_time_s": tx_time,
+            "tx_ns": time.perf_counter_ns() - int(simulated_flight_us * 1000),
             "samples": []
         }
 
-        # Construct synthetic inbound SYN-ACK response frame with kernel timestamp
-        # Packet arrival 1000.000150 s (+150us RTT)
-        rx_time = 1000.000150
-        response_pkt = IP(src=target_ip, dst="192.168.1.10") / TCP(sport=target_port, dport=source_port, flags="SA")
-        response_pkt.time = rx_time
-
-        # Process frame
+        # Process frame immediately
         self.tap._packet_handler(response_pkt)
 
-        # Assert microsecond RTT was recorded
+        # Assert sample captured within tight delta bounds
         samples = self.tap._pending_probes[probe_key]["samples"]
         self.assertEqual(len(samples), 1)
-        self.assertAlmostEqual(samples[0], 150.0, places=1)
+        self.assertAlmostEqual(samples[0], simulated_flight_us, delta=50.0)
 
     def test_l2_callback_forwarding(self):
         intercepted_frames = []

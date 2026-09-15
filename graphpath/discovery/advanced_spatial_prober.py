@@ -1,5 +1,5 @@
 """
-GraphPath Advanced Spatial Prober
+Project AETHERIS - Advanced Spatial Prober
 Non-credentialed physical spatial interrogation vectors:
 1. RFC 7323 TCP Timestamp Flight-Time & Microsecond Tick Jitter Calibration
 2. mDNS / DNS-SD Civic Location TXT Record Harvesting
@@ -10,11 +10,13 @@ import socket
 import struct
 import time
 import re
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 from loguru import logger
 
 SPEED_OF_LIGHT = 299_792_458  # meters/sec
 DEFAULT_NVP = 0.69             # Nominal Velocity of Propagation for Cat5e/Cat6 copper
+NVP_CAMERA_POE = 0.70          # Modern Cat6/Cat6a shielded runs (Axis, Hikvision)
+NVP_PLC_INDUSTRIAL = 0.68      # Legacy Cat5/Cat5e industrial plants (Siemens, Rockwell)
 
 
 class AdvancedSpatialProber:
@@ -27,18 +29,79 @@ class AdvancedSpatialProber:
     # 1. Microsecond TCP Flight Time Calibration (RFC 7323)
     # -------------------------------------------------------------------------
     @staticmethod
+    def resolve_dynamic_nvp(
+        mac: Optional[str] = None,
+        vendor: Optional[str] = None,
+        device_type: Optional[str] = None,
+        hardware_profile: Optional[Dict[str, Any]] = None,
+        default_nvp: float = DEFAULT_NVP,
+    ) -> Tuple[float, str]:
+        """
+        Resolves the dynamic NVP coefficient based on hardware profiling.
+        Returns: (nvp_value, nvp_source)
+        """
+        profile = hardware_profile or {}
+        target_mac = mac or profile.get("mac")
+        target_vendor = vendor or profile.get("vendor")
+        target_type = device_type or profile.get("type") or profile.get("device_type")
+
+        try:
+            from graphpath.core.device_classifier import DeviceClassifier
+            calibrated = DeviceClassifier.resolve_nvp(
+                mac=target_mac,
+                vendor=target_vendor,
+                device_type=target_type,
+                default_nvp=default_nvp,
+            )
+            has_hints = bool(target_mac or target_vendor or target_type)
+            source = (
+                "DYNAMIC_HARDWARE_CALIBRATED"
+                if (calibrated != default_nvp or has_hints)
+                else "STATIC_DEFAULT"
+            )
+            return calibrated, source
+        except Exception:
+            return default_nvp, "STATIC_DEFAULT"
+
+    @staticmethod
     def calculate_flight_distance_from_us(
         flight_us: float,
         baseline_deduction_us: float = 50.0,
-        nvp: float = DEFAULT_NVP,
+        nvp: Optional[float] = None,
         min_distance_m: float = 0.5,
-        max_distance_m: float = 150.0
+        max_distance_m: float = 150.0,
+        mac: Optional[str] = None,
+        vendor: Optional[str] = None,
+        device_type: Optional[str] = None,
+        hardware_profile: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Calculates conductor length (meters) from measured microsecond flight time.
         Deducts nominal kernel TCP/IP context switch baseline (~50us for local LAN switch).
-        Converts one-way propagation time into physical distance using copper NVP.
+        Converts one-way propagation time into physical distance using copper NVP,
+        dynamically calibrated via hardware MAC OUI, vendor profile, or device archetype.
         """
+        if nvp is None:
+            resolved_nvp, nvp_source = AdvancedSpatialProber.resolve_dynamic_nvp(
+                mac=mac,
+                vendor=vendor,
+                device_type=device_type,
+                hardware_profile=hardware_profile,
+                default_nvp=DEFAULT_NVP,
+            )
+        else:
+            if (mac or vendor or device_type or hardware_profile) and nvp == DEFAULT_NVP:
+                resolved_nvp, nvp_source = AdvancedSpatialProber.resolve_dynamic_nvp(
+                    mac=mac,
+                    vendor=vendor,
+                    device_type=device_type,
+                    hardware_profile=hardware_profile,
+                    default_nvp=DEFAULT_NVP,
+                )
+            else:
+                resolved_nvp = nvp
+                nvp_source = "EXPLICIT_OVERRIDE" if nvp != DEFAULT_NVP else "STATIC_DEFAULT"
+
         if flight_us <= baseline_deduction_us:
             net_flight_us = 0.0
             one_way_flight_s = 0.0
@@ -46,7 +109,7 @@ class AdvancedSpatialProber:
         else:
             net_flight_us = flight_us - baseline_deduction_us
             one_way_flight_s = (net_flight_us * 1e-6) / 2.0
-            v_prop = SPEED_OF_LIGHT * nvp
+            v_prop = SPEED_OF_LIGHT * resolved_nvp
             raw_distance_m = one_way_flight_s * v_prop
             clamped_distance = round(max(min_distance_m, min(raw_distance_m, max_distance_m)), 2)
 
@@ -61,6 +124,8 @@ class AdvancedSpatialProber:
             "estimated_distance_meters": clamped_distance,
             "estimated_distance_feet": round(clamped_distance * 3.28084, 2),
             "confidence_score": confidence,
+            "nvp_calibrated": round(resolved_nvp, 4),
+            "nvp_source": nvp_source,
             "derivation_method": "MICROSECOND_TCP_FLIGHT_CALIBRATION"
         }
 
@@ -157,6 +222,132 @@ class AdvancedSpatialProber:
             i += opt_len
 
         return None
+
+    @staticmethod
+    def get_os_kernel_deduction(os_profile: Optional[str] = None) -> float:
+        """
+        Dynamically derives kernel context-switch deduction baseline (microseconds)
+        from inferred operating system or hardware archetype.
+        """
+        if not os_profile:
+            return 50.0
+        prof_upper = os_profile.upper()
+        if any(term in prof_upper for term in ("ASIC", "SWITCH", "ROUTER")):
+            return 15.0
+        if any(term in prof_upper for term in ("LINUX", "UNIX")):
+            return 25.0
+        if "WINDOWS" in prof_upper:
+            return 65.0
+        if any(term in prof_upper for term in ("BACNET", "PLC", "CONTROLLER")):
+            return 110.0
+        return 50.0
+
+    @classmethod
+    def evaluate_passive_tcp_jitter(
+        cls,
+        current_sample: Tuple[int, int, int],
+        history: List[Tuple[int, int, int]],
+        os_profile: Optional[str] = None,
+        max_window: int = 32,
+    ) -> Dict[str, Any]:
+        """
+        Evaluates passive TCP RFC 7323 timestamp jitter against a sliding window.
+        Detects SPAN port buffer bloat anomalies (top 5% outliers or >3*MAD)
+        and flags corrupted propagation samples.
+        """
+        ts_val, ts_ecr, arrival_ns = current_sample
+        deduction_us = cls.get_os_kernel_deduction(os_profile)
+
+        if not history:
+            return {
+                "accepted": True,
+                "jitter_us": 0.0,
+                "delta_arrival_us": 0.0,
+                "median_arrival_us": 0.0,
+                "baseline_deduction_us": deduction_us,
+                "sample_count": 1,
+                "buffer_bloat_discard": False,
+            }
+
+        prev_ts_val, prev_ts_ecr, prev_arrival_ns = history[-1]
+        delta_arrival_us = max(0.0, (arrival_ns - prev_arrival_ns) / 1000.0)
+
+        # Collect arrival deltas across window
+        arrival_deltas: List[float] = []
+        for j in range(1, len(history)):
+            d_us = max(0.0, (history[j][2] - history[j - 1][2]) / 1000.0)
+            arrival_deltas.append(d_us)
+        arrival_deltas.append(delta_arrival_us)
+
+        # Compute Median and MAD
+        import numpy as np
+        med = float(np.median(arrival_deltas))
+        mad = float(np.median(np.abs(np.array(arrival_deltas, dtype=np.float64) - med)))
+
+        # Top 5% outlier / buffer bloat threshold (P95)
+        p95 = float(np.percentile(arrival_deltas, 95)) if len(arrival_deltas) >= 5 else delta_arrival_us
+        is_outlier = False
+        if len(arrival_deltas) >= 5:
+            # If current delta exceeds 95th percentile or exceeds 3*MAD from median
+            if delta_arrival_us >= p95 and delta_arrival_us > med + 50.0:
+                is_outlier = True
+            elif mad > 0.0 and (delta_arrival_us - med) > 3.0 * mad + 50.0:
+                is_outlier = True
+
+        return {
+            "accepted": not is_outlier,
+            "jitter_us": round(abs(delta_arrival_us - med), 3),
+            "delta_arrival_us": round(delta_arrival_us, 3),
+            "median_arrival_us": round(med, 3),
+            "baseline_deduction_us": deduction_us,
+            "sample_count": len(arrival_deltas),
+            "buffer_bloat_discard": is_outlier,
+        }
+
+    @classmethod
+    def evaluate_spatial_pruning_boundary(
+        cls,
+        net_flight_us: Optional[float] = None,
+        estimated_distance_m: Optional[float] = None,
+        is_trunk: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Evaluates physical flight-time and switchport topology to determine spatial pruning state:
+        1. WAN_ROUTED: net_flight_us > 2000.0us -> bypasses localized copper constraints.
+        2. TRUNK_UPLINK: is_trunk=True -> optical fiber / inter-switch trunk, bypasses 100m copper limit.
+        3. OUT_OF_SPEC_COPPER: not is_trunk and estimated_distance_m > 110.0m -> restricts RTSP & high-throughput web sweeps.
+        4. NOMINAL_LOCAL_COPPER: otherwise.
+        """
+        if net_flight_us is not None and net_flight_us > 2000.0:
+            return {
+                "spatial_state": "WAN_ROUTED",
+                "bypass_copper_limits": True,
+                "prune_high_throughput": False,
+                "reason": f"Flight time ({net_flight_us:.1f}us > 2000us) indicates WAN/SD-WAN multi-hop transit; localized physics pruning bypassed.",
+            }
+
+        if is_trunk:
+            return {
+                "spatial_state": "TRUNK_UPLINK",
+                "bypass_copper_limits": True,
+                "prune_high_throughput": False,
+                "reason": "Target switchport is flagged as an aggregation trunk uplink (fiber-optic / AOC); 100m copper limit bypassed.",
+            }
+
+        if estimated_distance_m is not None and estimated_distance_m > 110.0:
+            return {
+                "spatial_state": "OUT_OF_SPEC_COPPER",
+                "bypass_copper_limits": False,
+                "prune_high_throughput": True,
+                "reason": f"Estimated copper distance ({estimated_distance_m:.1f}m > 110m) exceeds IEEE 802.3 standard; pruning RTSP and heavy web sweeps to protect link stability.",
+            }
+
+        return {
+            "spatial_state": "NOMINAL_LOCAL_COPPER",
+            "bypass_copper_limits": False,
+            "prune_high_throughput": False,
+            "reason": "Target physical drop is within standard IEEE 802.3 specification (<=110m).",
+        }
 
     # -------------------------------------------------------------------------
     # 2. mDNS / DNS-SD Civic Location TXT Record Harvesting

@@ -1,5 +1,5 @@
 """
-GraphPath Port Mirroring (SPAN/RSPAN/ERSPAN) & Frame Ingestion Engine
+Project AETHERIS - Port Mirroring (SPAN/RSPAN/ERSPAN) & Frame Ingestion Engine
 Handles:
  - Promiscuous Network Interface packet capture & Ring Buffering
  - 802.1Q & 802.1ad (QinQ) Multi-VLAN Tag Extraction
@@ -14,6 +14,7 @@ import time
 import ipaddress
 from typing import Dict, Any, List, Optional, Tuple, Callable
 from graphpath.discovery.dpi_parser import DpiParser
+from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
 
 def _is_private_ip(ip_str: Optional[str]) -> bool:
     """Validates if an IP is a valid private/local RFC1918, Link-Local, CGNAT, or ULA IPv6 address."""
@@ -118,6 +119,9 @@ class SpanCaptureEngine:
         self.on_node_discovered = on_node_discovered
         self._running = False
         self._lock = threading.Lock()
+        # 64 striped locks for per-flow sliding window telemetry to guarantee zero lock contention
+        self._flow_locks = [threading.Lock() for _ in range(64)]
+        self._flow_jitter_windows: Dict[Tuple[str, str, int, int], List[Tuple[int, int, int]]] = {}
         self.stats = {
             "packets_captured": 0,
             "bytes_captured": 0,
@@ -125,6 +129,31 @@ class SpanCaptureEngine:
             "protocols_detected": {},
             "active_hosts": set()
         }
+
+    def _evaluate_span_jitter(
+        self,
+        flow_key: Tuple[str, str, int, int],
+        timestamps: Dict[str, Any],
+        arrival_ns: int,
+        os_profile: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Ingests RFC 7323 timestamp sample into a striped per-flow sliding window.
+        Executes outlier filtering to discard SPAN port buffer bloat anomalies.
+        """
+        lock_idx = hash(flow_key) & 63
+        with self._flow_locks[lock_idx]:
+            history = self._flow_jitter_windows.setdefault(flow_key, [])
+            current_sample = (timestamps["ts_val"], timestamps["ts_ecr"], arrival_ns)
+            eval_res = AdvancedSpatialProber.evaluate_passive_tcp_jitter(
+                current_sample=current_sample,
+                history=history,
+                os_profile=os_profile,
+            )
+            history.append(current_sample)
+            if len(history) > 32:
+                self._flow_jitter_windows[flow_key] = history[-32:]
+            return eval_res
 
     def process_raw_frame(self, frame: bytes) -> Dict[str, Any]:
         """
@@ -219,9 +248,32 @@ class SpanCaptureEngine:
                 with self._lock:
                     self.stats["protocols_detected"]["TCP"] = self.stats["protocols_detected"].get("TCP", 0) + 1
 
+                # Extract full dynamic TCP header to capture RFC 7323 Options
+                if len(payload) >= ihl + tcp_data_offset:
+                    full_tcp_hdr = payload[ihl:ihl + tcp_data_offset]
+                    timestamps = AdvancedSpatialProber.extract_tcp_timestamps(full_tcp_hdr)
+
+                    if timestamps and timestamps.get("has_rfc7323"):
+                        flow_key = (src_ip, dst_ip, src_port, dst_port)
+                        arrival_ns = time.perf_counter_ns()
+                        jitter_eval = self._evaluate_span_jitter(flow_key, timestamps, arrival_ns)
+
+                        flow_data.setdefault("telemetry", {})
+                        flow_data["telemetry"]["spatial_jitter"] = {
+                            "ts_val": timestamps["ts_val"],
+                            "ts_ecr": timestamps["ts_ecr"],
+                            "raw_tcp_options_len": max(0, len(full_tcp_hdr) - 20),
+                            "jitter_us": jitter_eval.get("jitter_us", 0.0),
+                            "baseline_deduction_us": jitter_eval.get("baseline_deduction_us", 50.0),
+                            "buffer_bloat_discard": jitter_eval.get("buffer_bloat_discard", False),
+                        }
+
                 # Deep Packet Inspection
                 dpi_res = DpiParser.parse_payload(app_payload, src_port, dst_port, "TCP")
                 if dpi_res:
+                    if "telemetry" in flow_data and isinstance(flow_data["telemetry"], dict):
+                        if "spatial_jitter" in flow_data["telemetry"]:
+                            dpi_res["spatial_jitter"] = flow_data["telemetry"]["spatial_jitter"]
                     flow_data["telemetry"] = dpi_res
                     self._dispatch_telemetry(src_ip, src_mac, dst_ip, vlan_id, dpi_res)
 

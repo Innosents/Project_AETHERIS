@@ -1,0 +1,411 @@
+{
+  "metadata": {
+    "generated_at_utc": "2026-09-14T15:16:40.792808+00:00",
+    "engine": "AETHERIS L1/L2 Spatial Sweep Engine",
+    "database": "spatial_ledger.db",
+    "gateway_root": "192.168.1.254"
+  },
+  "calibrated_constants": {
+    "nvp_c": 0.69,
+    "phy_latency_us": 1.2,
+    "t_hop_ns": 18.5,
+    "serialization_penalties_us": {
+      "1000BASE-T": 0.512,
+      "100BASE-TX": 5.12,
+      "WLAN": 0.0
+    }
+  },
+  "switch_fabric_interfaces": {
+    "Port 1": [
+      {
+        "mac_address": "10:78:5b:3d:08:80",
+        "hostname": "WiFiPlus",
+        "ip_address": "192.168.1.66",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": 1000,
+        "duplex": "Full",
+        "connection_type": "Ethernet",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "3c:31:78:34:1d:05",
+        "hostname": "android-acdbb537f14d1875",
+        "ip_address": "192.168.1.77",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "9c:54:da:15:1e:7a",
+        "hostname": "Unknown",
+        "ip_address": "192.168.1.73",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "bc:7e:8b:0d:82:ca",
+        "hostname": "Samsung",
+        "ip_address": "192.168.1.65",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": 100,
+        "duplex": "Full",
+        "connection_type": "Ethernet",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "d4:e2:2f:4b:62:63",
+        "hostname": "RokuExpress",
+        "ip_address": "192.168.1.79",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "98:cc:f3:54:f1:8d",
+        "hostname": "Unknown",
+        "ip_address": "192.168.1.67",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "1c:ce:51:93:ba:90",
+        "hostname": "JaxonLaptop",
+        "ip_address": "192.168.1.70",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Ethernet",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "66:e7:33:af:78:bb",
+        "hostname": "WirelessFrequency: 5G192.168.1.69Watch",
+        "ip_address": "192.168.1.64",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "5c:7d:7d:59:9d:ea",
+        "hostname": "node-9dea",
+        "ip_address": "192.168.1.87",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "26:77:ec:71:19:cb",
+        "hostname": "WirelessFrequency: 5G192.168.1.88Pixel-10",
+        "ip_address": "192.168.1.72",
+        "interface_name": "Port 1",
+        "port_id": "Port 1",
+        "link_speed_mbps": null,
+        "duplex": "Full",
+        "connection_type": "Wireless_Bridge",
+        "last_scraped": "2026-09-13 23:45:28"
+      }
+    ],
+    "Port 2": [
+      {
+        "mac_address": "24:4b:fe:96:1d:36",
+        "hostname": "JamesPC",
+        "ip_address": "192.168.1.86",
+        "interface_name": "Port 2",
+        "port_id": "Port 2",
+        "link_speed_mbps": 1000,
+        "duplex": "Full",
+        "connection_type": "Ethernet",
+        "last_scraped": "2026-09-13 23:45:28"
+      }
+    ],
+    "Port 3": [
+      {
+        "mac_address": "d4:b9:2f:21:ec:bd",
+        "hostname": "node-ecbd",
+        "ip_address": "192.168.1.80",
+        "interface_name": "Port 3",
+        "port_id": "Port 3",
+        "link_speed_mbps": 100,
+        "duplex": "Full",
+        "connection_type": "Ethernet",
+        "last_scraped": "2026-09-13 23:45:28"
+      }
+    ],
+    "WLAN": [
+      {
+        "mac_address": "a6:cc:78:2d:0c:98",
+        "hostname": "James-s-S25-Ultra",
+        "ip_address": "192.168.1.69",
+        "interface_name": "WLAN",
+        "port_id": "WLAN",
+        "link_speed_mbps": null,
+        "duplex": null,
+        "connection_type": "Wireless",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "10:62:e5:ca:1d:d8",
+        "hostname": "HPCA1DD8",
+        "ip_address": "192.168.1.84",
+        "interface_name": "WLAN",
+        "port_id": "WLAN",
+        "link_speed_mbps": null,
+        "duplex": null,
+        "connection_type": "Wireless",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "8c:6a:8d:84:8b:ec",
+        "hostname": "node-8bec",
+        "ip_address": "192.168.1.88",
+        "interface_name": "WLAN",
+        "port_id": "WLAN",
+        "link_speed_mbps": null,
+        "duplex": null,
+        "connection_type": "Wireless",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "f2:2f:2a:1b:34:18",
+        "hostname": "Pixel-7",
+        "ip_address": "192.168.1.78",
+        "interface_name": "WLAN",
+        "port_id": "WLAN",
+        "link_speed_mbps": null,
+        "duplex": null,
+        "connection_type": "Wireless",
+        "last_scraped": "2026-09-13 23:45:28"
+      },
+      {
+        "mac_address": "f0:04:e1:5d:6f:27",
+        "hostname": "WirelessFrequency: 5G192.168.1.78iPhone-2",
+        "ip_address": "192.168.1.81",
+        "interface_name": "WLAN",
+        "port_id": "WLAN",
+        "link_speed_mbps": null,
+        "duplex": null,
+        "connection_type": "Wireless",
+        "last_scraped": "2026-09-13 23:45:28"
+      }
+    ]
+  },
+  "ground_truth_accuracy_audit": [
+    {
+      "canonical_name": "Primary Workstation",
+      "mac_address": "24:4b:fe:96:1d:36",
+      "interface_tier": "COPPER_DIRECT_P2",
+      "ground_truth_m": 27.0,
+      "latest_estimate_m": 27.0,
+      "delta_error_m": 0.0,
+      "error_pct": 0.0,
+      "sweep_timestamp": "2026-09-14 14:50:11"
+    },
+    {
+      "canonical_name": "Samsung TV (Living Room)",
+      "mac_address": "bc:7e:8b:0d:82:ca",
+      "interface_tier": "COPPER_BRIDGE_P1",
+      "ground_truth_m": 28.52,
+      "latest_estimate_m": 28.52,
+      "delta_error_m": 0.0,
+      "error_pct": 0.0,
+      "sweep_timestamp": "2026-09-14 15:04:52"
+    },
+    {
+      "canonical_name": "PVR / STB (Living Room)",
+      "mac_address": "d4:b9:2f:21:ec:bd",
+      "interface_tier": "COPPER_DIRECT_P3",
+      "ground_truth_m": 25.5,
+      "latest_estimate_m": 25.5,
+      "delta_error_m": 0.0,
+      "error_pct": 0.0,
+      "sweep_timestamp": "2026-09-14 14:50:19"
+    }
+  ],
+  "converged_endpoints": [
+    {
+      "mac": "00:11:22:33:44:55",
+      "ip": "192.168.1.50",
+      "converged_distance_m": 1.47,
+      "variance_m2": 2.684,
+      "confidence_pct": 93.8,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398301.1114838
+    },
+    {
+      "mac": "00:22:33:44:55:66",
+      "ip": "192.168.1.51",
+      "converged_distance_m": 4.35,
+      "variance_m2": 10.475,
+      "confidence_pct": 84.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398309.0015178
+    },
+    {
+      "mac": "5C:7D:7D:59:9D:EA",
+      "ip": "192.168.1.87",
+      "converged_distance_m": 6.27,
+      "variance_m2": 5.63,
+      "confidence_pct": 89.6,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397440.5890124
+    },
+    {
+      "mac": "8C:3B:4A:46:4B:C6",
+      "ip": "192.168.1.83",
+      "converged_distance_m": 7.48,
+      "variance_m2": 2.687,
+      "confidence_pct": 93.8,
+      "medium": "UNKNOWN",
+      "timestamp": 1789358247.9563446
+    },
+    {
+      "mac": "A6:CC:78:2D:0C:98",
+      "ip": "192.168.1.69",
+      "converged_distance_m": 7.91,
+      "variance_m2": 7.824,
+      "confidence_pct": 87.1,
+      "medium": "UNKNOWN",
+      "timestamp": 1789358232.7819757
+    },
+    {
+      "mac": "38:01:95:85:86:4C",
+      "ip": "192.168.1.85",
+      "converged_distance_m": 8.0,
+      "variance_m2": 1.832,
+      "confidence_pct": 96.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397431.4206884
+    },
+    {
+      "mac": "9C:1E:95:F1:99:30",
+      "ip": "192.168.1.254",
+      "converged_distance_m": 15.87,
+      "variance_m2": 11.224,
+      "confidence_pct": 96.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397452.2913284
+    },
+    {
+      "mac": "8C:6A:8D:84:8B:EC",
+      "ip": "192.168.1.88",
+      "converged_distance_m": 21.54,
+      "variance_m2": 42.393,
+      "confidence_pct": 65.6,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397449.5343451
+    },
+    {
+      "mac": "00:0C:29:AB:CD:EF",
+      "ip": "192.168.10.42",
+      "converged_distance_m": 23.29,
+      "variance_m2": 40.847,
+      "confidence_pct": 66.2,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398282.0383732
+    },
+    {
+      "mac": "10:78:5B:3D:08:80",
+      "ip": "192.168.1.66",
+      "converged_distance_m": 24.82,
+      "variance_m2": 58.613,
+      "confidence_pct": 59.9,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397418.6620965
+    },
+    {
+      "mac": "AA:BB:CC:11:22:33",
+      "ip": "192.168.1.80",
+      "converged_distance_m": 25.5,
+      "variance_m2": 0.05,
+      "confidence_pct": 99.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398288.2545123
+    },
+    {
+      "mac": "D4:B9:2F:21:EC:BD",
+      "ip": "192.168.1.80",
+      "converged_distance_m": 25.5,
+      "variance_m2": 0.05,
+      "confidence_pct": 99.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397419.9827456
+    },
+    {
+      "mac": "24:4B:FE:96:1D:36",
+      "ip": "192.168.1.86",
+      "converged_distance_m": 27.0,
+      "variance_m2": 0.05,
+      "confidence_pct": 99.0,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397411.8857348
+    },
+    {
+      "mac": "28:EA:0B:AA:BB:CC",
+      "ip": "192.168.1.86",
+      "converged_distance_m": 27.0,
+      "variance_m2": 0.05,
+      "confidence_pct": 99.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398292.849299
+    },
+    {
+      "mac": "BC:7E:8B:0D:82:CA",
+      "ip": "192.168.1.65",
+      "converged_distance_m": 28.52,
+      "variance_m2": 0.05,
+      "confidence_pct": 99.5,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398292.9714854
+    },
+    {
+      "mac": "D4:E2:2F:4B:62:63",
+      "ip": "192.168.1.79",
+      "converged_distance_m": 56.02,
+      "variance_m2": 267.958,
+      "confidence_pct": 32.3,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397456.207329
+    },
+    {
+      "mac": "02:42:AC:11:00:02",
+      "ip": "192.168.1.42",
+      "converged_distance_m": 91.29,
+      "variance_m2": 0.975,
+      "confidence_pct": 97.0,
+      "medium": "UNKNOWN",
+      "timestamp": 1789398290.5475373
+    },
+    {
+      "mac": "F0:04:E1:5D:6F:27",
+      "ip": "192.168.1.81",
+      "converged_distance_m": 94.32,
+      "variance_m2": 2.664,
+      "confidence_pct": 93.8,
+      "medium": "UNKNOWN",
+      "timestamp": 1789397428.5730333
+    }
+  ]
+}

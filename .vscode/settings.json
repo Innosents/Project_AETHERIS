@@ -1,5 +1,5 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.defaultInterpreterPath": "E:\\Project_AETHERIS\\.venv\\Scripts\\python.exe",
     "python.terminal.activateEnvironment": true,
     "python.analysis.extraPaths": [
         "${workspaceFolder}"
@@ -11,10 +11,9 @@
         "PYTHONPATH": "${workspaceFolder}"
     },
     "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}",
-
-    "antigravity.planning.stopAfterPlanning": "true"    
+        "PYTHONPATH": "${workspaceFolder}"
     },
+    "antigravity.planning.stopAfterPlanning": true,
     "git.ignoreLimitWarning": true,
     "git.autorefresh": false,
     "git.autofetch": false,
@@ -28,5 +27,14 @@
         "**/.pytest_cache/**": true,
         "**/__pycache__/**": true,
         "**/logs/**": true
+    },
+    "mcpServers": {
+        "aetheris-spatial": {
+            "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+            "args": ["-m", "graphpath.mcp.spatial_server"],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
     }
 }

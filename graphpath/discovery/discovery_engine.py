@@ -1,5 +1,5 @@
 """
-GraphPath Discovery Engine
+Project AETHERIS - Discovery Engine
 Orchestrates active discovery sweeps, Bayesian evidence fusion,
 passive L2 CDP/LLDP switch-tree mapping, raw socket Npcap packet tapping,
 and recursive Kalman spatial distance estimation.
@@ -11,6 +11,10 @@ from graphpath.core.spatial_bayesian import BayesianEvidenceFusion
 from graphpath.discovery.spatial_kalman import SpatialKalmanEstimator
 from graphpath.discovery.passive_l2_listener import PassiveL2TopologyListener
 from graphpath.discovery.raw_packet_tap import RawPacketTap
+
+
+from graphpath.core.dip_manager import DeviceIdentityProfileManager
+from graphpath.discovery.dpi_parser import DpiParser
 
 
 class DiscoveryEngine:
@@ -35,8 +39,8 @@ class DiscoveryEngine:
         self.kalman = SpatialKalmanEstimator(default_nvp=0.69, default_asic_lat_us=1.2)
         self.switch_id = "default_core_switch"
         self.l2_listener = PassiveL2TopologyListener(on_switch_discovered=self._handle_switch_discovered)
+        self.dip_manager = DeviceIdentityProfileManager()
 
-        # Low-level raw packet tap
         self.packet_tap = RawPacketTap(
             interface=interface,
             on_packet_received=self.ingest_l2_packet
@@ -69,9 +73,72 @@ class DiscoveryEngine:
             "archetype": "NETWORK_INFRASTRUCTURE"
         })
 
+        sw_mac = switch_data.get("raw_mac")
+        if sw_mac:
+            proto = switch_data.get("protocol", "L2")
+            vendor = "Cisco Systems" if proto == "CDP" else "Network Switch"
+            self.dip_manager.ingest_observation(
+                mac=sw_mac,
+                ip=switch_data.get("management_ip", ""),
+                vendor=vendor,
+                hostname=switch_data.get("system_name", ""),
+                dev_type="switch",
+                evidence_source=f"passive_{proto.lower()}"
+            )
+
     def ingest_l2_packet(self, packet: Any) -> Optional[Dict[str, Any]]:
-        """Passively processes an ingested raw L2 frame."""
-        return self.l2_listener.process_packet(packet)
+        """Passively processes an ingested raw L2 frame and extracts DPI telemetry."""
+        res = self.l2_listener.process_packet(packet)
+
+        # Passive DPI & identity extraction across observed conversation flows
+        try:
+            from scapy.layers.l2 import Ether
+            from scapy.layers.inet import IP, TCP, UDP
+
+            if hasattr(packet, "haslayer") and packet.haslayer(IP):
+                ip_layer = packet[IP]
+                src_ip = ip_layer.src
+                src_mac = packet[Ether].src if packet.haslayer(Ether) else ""
+                ttl = ip_layer.ttl
+                os_family = "linux" if ttl <= 64 else ("windows" if ttl <= 128 else "network")
+
+                dpi_res = None
+                if packet.haslayer(TCP):
+                    tcp = packet[TCP]
+                    payload = bytes(tcp.payload)
+                    if payload:
+                        dpi_res = DpiParser.parse_payload(payload, tcp.sport, tcp.dport, "TCP")
+                elif packet.haslayer(UDP):
+                    udp = packet[UDP]
+                    payload = bytes(udp.payload)
+                    if payload:
+                        dpi_res = DpiParser.parse_payload(payload, udp.sport, udp.dport, "UDP")
+
+                if dpi_res:
+                    target_mac = dpi_res.get("mac") or src_mac
+                    target_ip = dpi_res.get("requested_ip") or dpi_res.get("ip") or src_ip
+                    if target_mac:
+                        self.dip_manager.ingest_observation(
+                            mac=target_mac,
+                            ip=target_ip,
+                            vendor=dpi_res.get("vendor"),
+                            model=dpi_res.get("model"),
+                            hostname=dpi_res.get("hostname"),
+                            dev_type=dpi_res.get("type"),
+                            os_family=os_family,
+                            evidence_source=f"passive_dpi_{dpi_res.get('protocol', 'generic').lower()}"
+                        )
+                elif src_mac and src_ip:
+                    self.dip_manager.ingest_observation(
+                        mac=src_mac,
+                        ip=src_ip,
+                        os_family=os_family,
+                        evidence_source="passive_ip_ttl"
+                    )
+        except Exception:
+            pass
+
+        return res
 
     def probe_and_calibrate_endpoint(
         self,
@@ -83,10 +150,7 @@ class DiscoveryEngine:
         parent_switch_id: Optional[str] = None,
         path_trunk_ids: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """
-        Fires hardware-timed RTT bursts via RawPacketTap, fuses evidence,
-        and estimates physical cable length into GraphStore.
-        """
+        """Fires hardware-timed RTT bursts via RawPacketTap and processes the node."""
         if self.packet_tap:
             rtt_samples = self.packet_tap.execute_rtt_pulse_burst(
                 target_ip=target_ip,
@@ -131,7 +195,13 @@ class DiscoveryEngine:
         )
         return trunk_id
 
-    def register_switch_anchor(self, switch_id: str, anchor_target_id: str, true_distance_m: float, measurement_variance: float = 0.25) -> None:
+    def register_switch_anchor(
+        self,
+        switch_id: str,
+        anchor_target_id: str,
+        true_distance_m: float,
+        measurement_variance: float = 0.25
+    ) -> None:
         link_id = f"{switch_id}->{anchor_target_id}"
         self.kalman.register_anchor(link_id, true_distance_m=true_distance_m, measurement_variance=measurement_variance)
         self.graph.add_edge(
@@ -181,22 +251,26 @@ class DiscoveryEngine:
             spatial_state = self.kalman.links[link_id]
         else:
             spatial_state = None
-            for rtt in rtt_samples_us:
-                spatial_state = self.kalman.update_link_rtt(
-                    link_id=link_id,
-                    observed_rtt_us=rtt,
-                    target_stack_latency_us=stack_latency_us,
-                    measurement_jitter_us=0.05,
-                    prober_distance_m=self.prober_lead_m,
-                    path_trunk_ids=path_trunk_ids
-                )
+            if rtt_samples_us:
+                min_rtt = min(rtt_samples_us)
+                for _ in range(3):
+                    spatial_state = self.kalman.update_link_rtt(
+                        link_id=link_id,
+                        observed_rtt_us=min_rtt,
+                        target_stack_latency_us=stack_latency_us,
+                        measurement_jitter_us=0.05,
+                        prober_distance_m=self.prober_lead_m,
+                        path_trunk_ids=path_trunk_ids
+                    )
 
             if spatial_state:
+                raw_dist = spatial_state["distance"]
+
                 self.graph.add_edge(
                     source=target_switch,
                     target=node_id,
                     edge_type="ETHERNET_LINK",
-                    distance_m=round(spatial_state["distance"], 2),
+                    distance_m=round(raw_dist, 2),
                     variance_m2=round(spatial_state["variance"], 4),
                     confidence_pct=spatial_state["confidence_pct"],
                     is_anchor=False

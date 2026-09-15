@@ -1,5 +1,5 @@
 """
-Active Service Prober (mDNS, SSDP, NetBIOS, WSD)
+Project AETHERIS - Active Service Prober (mDNS, SSDP, NetBIOS, WSD)
 Elicits responses from otherwise silent mobile devices, laptops, routers,
 Smart TVs, and ISP TV Set-Top Boxes (STBs: ARRIS, Technicolor, Humax, Sagemcom, Roku, Apple TV, Fire TV).
 """

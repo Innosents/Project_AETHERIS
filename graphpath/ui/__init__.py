@@ -1,5 +1,5 @@
 """
-GraphPath Web Presentation and Routing Subsystem.
+Project AETHERIS - Web Presentation and Routing Subsystem.
 """
 
 from graphpath.ui.server import create_app, start_ui_async

@@ -1,5 +1,5 @@
 """
-GraphPath Core Discovery Engine
+Project AETHERIS - Core Discovery Engine
 Coordinates active matrix sweeps, ARP mapping, multi-variance stealth probes,
 and adaptive deep protocol interrogation.
 """

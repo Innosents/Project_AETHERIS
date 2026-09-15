@@ -1,5 +1,5 @@
 """
-GraphPath Unified Geolocation, LLDP-MED Dissection and Spatial Path Routing Engine
+Project AETHERIS - Unified Geolocation, LLDP-MED Dissection and Spatial Path Routing Engine
 Correlates macro WAN GPS coordinates, LLDP-MED/CDP Civic Addresses (Building/Floor/Room/Jack),
 and physical network switch-port graph paths into unified spatial telemetry.
 """
@@ -8,11 +8,12 @@ import os
 import sys
 import json
 import time
+import math
 import socket
 import struct
 import urllib.request
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Set
 
 try:
     from core.path_utils import get_data_dir
@@ -24,9 +25,97 @@ except ImportError:
 class PublicGeoIpResolver:
     """Resolves and caches public WAN IP GPS coordinates, city, region, ISP, and ASN."""
 
+    V_FIBER_KM_S: float = 200860.0  # Speed of light in optical fiber (~0.67c)
+    BGP_PATH_INFLATION_SCALAR: float = 1.5  # Asymmetric BGP peering / fiber trenching scalar
+    HYPERSCALER_ASNS: Set[str] = {"16509", "8075", "15169", "13335", "14061"}
+
     _cached_result: Optional[Dict[str, Any]] = None
     _last_lookup_time: float = 0.0
     _CACHE_TTL_SECONDS: float = 86400.0  # 24 hours
+    _ip_cache: Dict[str, Dict[str, Any]] = {}
+
+    @classmethod
+    def calculate_haversine_distance_km(cls, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        Computes great-circle distance between two geographic coordinates in kilometers
+        using the spherical Haversine formula (Earth radius R = 6371.0 km).
+        """
+        r = 6371.0
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+
+        a = (math.sin(delta_phi / 2.0) ** 2 +
+             math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2)
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a)))
+        return round(r * c, 3)
+
+    @classmethod
+    def calculate_rtt_min_ms(cls, distance_km: float, inflation_scalar: float = 1.5) -> float:
+        """
+        Calculates minimum expected round-trip time in milliseconds across single-mode optical fiber,
+        scaled by an empirical BGP asymmetric path inflation scalar (default 1.5x).
+        """
+        if distance_km <= 0:
+            return 0.0
+        linear_rtt_sec = (2.0 * distance_km) / cls.V_FIBER_KM_S
+        linear_rtt_ms = linear_rtt_sec * 1000.0
+        return round(linear_rtt_ms * inflation_scalar, 3)
+
+    @classmethod
+    def resolve_ip(cls, ip: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Resolves public IP metadata (coordinates, ASN, ISP, country) with in-memory caching.
+        """
+        if not ip:
+            return cls._get_fallback_location()
+        if not force_refresh and ip in cls._ip_cache:
+            return cls._ip_cache[ip]
+
+        # For loopback / RFC 1918 / private IPs or offline mode, return fallback
+        if (ip.startswith("127.") or ip.startswith("10.") or
+            ip.startswith("192.168.") or ip.startswith("172.16.") or
+            os.environ.get("GRAPHPATH_OFFLINE") == "1" or
+            os.environ.get("GRAPHPATH_DISABLE_GEOIP") == "1"):
+            fallback = dict(cls._get_fallback_location())
+            fallback["public_ip"] = ip
+            cls._ip_cache[ip] = fallback
+            return fallback
+
+        try:
+            url = f"https://ip-api.com/json/{ip}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "GraphPath-Discovery-Engine/2.0 (Spatial Network Topology)"}
+            )
+            with urllib.request.urlopen(req, timeout=1.8) as response:
+                if response.status == 200:
+                    payload = json.loads(response.read().decode("utf-8"))
+                    if "lat" in payload and "lon" in payload:
+                        res = {
+                            "public_ip": ip,
+                            "country": payload.get("country", "United States"),
+                            "country_code": payload.get("countryCode", "US"),
+                            "region": payload.get("regionName") or payload.get("region", ""),
+                            "city": payload.get("city", "Remote Site"),
+                            "postal_code": payload.get("zip") or payload.get("postal", ""),
+                            "latitude": float(payload.get("lat", 0.0)),
+                            "longitude": float(payload.get("lon", 0.0)),
+                            "timezone": payload.get("timezone", "UTC"),
+                            "isp": payload.get("isp") or payload.get("org", "WAN Uplink"),
+                            "asn": payload.get("as") or payload.get("org", "AS-Unknown"),
+                            "source": "ip_geolocation_api"
+                        }
+                        cls._ip_cache[ip] = res
+                        return res
+        except Exception:
+            pass
+
+        fallback = dict(cls._get_fallback_location())
+        fallback["public_ip"] = ip
+        cls._ip_cache[ip] = fallback
+        return fallback
 
     @classmethod
     def get_cache_file_path(cls) -> Path:
@@ -237,6 +326,134 @@ class LldpMedLocationDecoder:
 
         return result
 
+    TROMBONING_LATENCY_THRESHOLD_US: float = 10.0
+
+    RESTRICTED_ZONES = {
+        "server_mdf", "mdf", "idf", "datacenter", "data_center", "noc",
+        "vault", "sec_ops", "restricted", "core_switch_room", "scada_lab",
+        "plc_cabinet"
+    }
+
+    PUBLIC_ZONES = {
+        "lobby", "public", "guest", "reception", "visitor",
+        "cafeteria", "atrium", "outdoor", "untrusted"
+    }
+
+    @classmethod
+    def classify_zone(cls, room_or_zone: str) -> str:
+        """
+        Classifies room or zone string into RESTRICTED, PUBLIC, or STANDARD.
+        """
+        if not room_or_zone:
+            return "STANDARD"
+        normalized = str(room_or_zone).strip().lower().replace(" ", "_").replace("-", "_")
+        for r_zone in cls.RESTRICTED_ZONES:
+            if r_zone in normalized:
+                return "RESTRICTED"
+        for p_zone in cls.PUBLIC_ZONES:
+            if p_zone in normalized:
+                return "PUBLIC"
+        return "STANDARD"
+
+    @classmethod
+    def normalize_civic_address(cls, raw_civic: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalizes civic address attributes into a clean, typed civic vector dictionary.
+        """
+        if not isinstance(raw_civic, dict):
+            return {}
+
+        civic = raw_civic.get("civic_address", raw_civic) if isinstance(raw_civic.get("civic_address"), dict) else raw_civic
+
+        building = str(civic.get("building") or "").strip()
+        floor_raw = str(civic.get("floor") or "").strip()
+        room = str(civic.get("room") or "").strip()
+        rack = str(civic.get("rack") or civic.get("wall_jack") or "").strip()
+        country = str(civic.get("country") or "").strip().upper()
+
+        floor_norm = floor_raw
+        if floor_raw.lower().startswith("floor"):
+            floor_norm = floor_raw[5:].strip()
+        elif floor_raw.lower().startswith("fl"):
+            floor_norm = floor_raw[2:].lstrip("-_: ").strip()
+
+        try:
+            floor_clean = str(int(floor_norm))
+        except (ValueError, TypeError):
+            floor_clean = floor_norm.upper() if floor_norm else ""
+
+        zone = civic.get("zone")
+        if zone:
+            zone_type = str(zone).upper()
+        else:
+            zone_type = cls.classify_zone(room)
+
+        return {
+            "building": building,
+            "floor": floor_clean,
+            "floor_raw": floor_raw,
+            "room": room,
+            "rack": rack,
+            "country": country,
+            "zone_type": zone_type,
+            "is_restricted": (zone_type == "RESTRICTED"),
+            "is_public": (zone_type == "PUBLIC")
+        }
+
+    @classmethod
+    def compute_physical_vector(
+        cls,
+        src_civic: Dict[str, Any],
+        dst_civic: Dict[str, Any],
+        latency_us: float = 0.0,
+        byte_count: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Computes the physical spatial vector between two normalized civic locations
+        and evaluates spatial policy violations (tromboning and perimeter boundary breaches).
+        """
+        src_norm = cls.normalize_civic_address(src_civic)
+        dst_norm = cls.normalize_civic_address(dst_civic)
+
+        src_bldg = src_norm.get("building", "")
+        dst_bldg = dst_norm.get("building", "")
+        src_floor = src_norm.get("floor", "")
+        dst_floor = dst_norm.get("floor", "")
+        src_room = src_norm.get("room", "")
+        dst_room = dst_norm.get("room", "")
+
+        same_building = bool(src_bldg and dst_bldg and src_bldg.lower() == dst_bldg.lower())
+        same_floor = bool(same_building and src_floor and dst_floor and src_floor == dst_floor)
+        same_room = bool(same_floor and src_room and dst_room and src_room.lower() == dst_room.lower())
+
+        src_desc = f"{src_bldg or 'Bldg?'}:{src_floor or 'FL?'}:{src_room or 'Room?'}"
+        dst_desc = f"{dst_bldg or 'Bldg?'}:{dst_floor or 'FL?'}:{dst_room or 'Room?'}"
+        spatial_path = f"{src_desc} -> {dst_desc}"
+
+        flags: List[str] = []
+
+        # 1. Tromboning Evaluation: Intra-floor flow with core/WAN latency signature
+        # Local access switch flight time is <= 5-10 us. If > 10 us, traffic is tromboning through core/WAN.
+        if same_floor and latency_us > cls.TROMBONING_LATENCY_THRESHOLD_US:
+            flags.append("FLAG_CROSS_FLOOR_TROMBONING")
+
+        # 2. Zone Boundary Violation: Restricted zone egressing directly to Public zone
+        if src_norm.get("is_restricted") and dst_norm.get("is_public"):
+            flags.append("FLAG_ZONE_BOUNDARY_VIOLATION")
+
+        return {
+            "spatial_path": spatial_path,
+            "src_civic": src_norm,
+            "dst_civic": dst_norm,
+            "same_building": same_building,
+            "same_floor": same_floor,
+            "same_room": same_room,
+            "latency_us": float(latency_us),
+            "byte_count": int(byte_count),
+            "flags": flags
+        }
+
+
 
 class SpatialPathReasoner:
     """
@@ -262,8 +479,14 @@ class SpatialPathReasoner:
         path_steps = []
         path_steps.append(f"Device: {dev_name} ({dev_ip})")
 
+        # Check overlay flags (prunes false Layer 1 copper links upon detecting overlay flags)
+        overlay_flags = set(node_meta.get("overlay_flags") or node_meta.get("spatial_flags") or [])
+        is_sdwan = "FLAG_SD_WAN_TUNNEL_OVERLAY" in overlay_flags
+        is_cloud_vpn = "FLAG_CLOUD_VPN_ENCAPSULATED" in overlay_flags
+        is_virtual_overlay = is_sdwan or is_cloud_vpn
+
         port_assigned = node_meta.get("port") or node_meta.get("port_id")
-        if port_assigned:
+        if port_assigned and not is_virtual_overlay:
             civic["wall_jack"] = f"Jack-{port_assigned}"
             path_steps.append(f"Wall Jack: Jack-{port_assigned}")
             path_steps.append(f"Switch Port: {port_assigned}")
@@ -278,8 +501,18 @@ class SpatialPathReasoner:
             sw_type = sw_meta.get("type", "").lower()
             if sw_type in ("switch", "router", "gateway", "firewall", "managed_switch", "core_switch") or "switch" in sw_id.lower():
                 sw_name = sw_meta.get("label") or sw_meta.get("model") or sw_meta.get("hostname") or sw_id
-                path_steps.append(f"Distribution Switch: {sw_name}")
+                if not is_virtual_overlay:
+                    path_steps.append(f"Distribution Switch: {sw_name}")
                 break
+
+        if is_sdwan:
+            asn_info = node_meta.get("asn") or macro_geo.get("asn") or "AS-Overlay"
+            rtt_delta = node_meta.get("rtt_delta_ms", 0.0)
+            path_steps.append(f"Virtual Overlay: SD-WAN IPsec Tunnel (BGP {asn_info} | Inflated RTT Delta +{rtt_delta}ms)")
+        elif is_cloud_vpn:
+            provider = node_meta.get("cloud_provider") or "Hyperscaler"
+            asn_info = node_meta.get("asn") or macro_geo.get("asn") or "AS-Cloud"
+            path_steps.append(f"Virtual Overlay: Cloud VPN Encapsulated Gateway ({provider} {asn_info} -> Virtual Transit VGW)")
 
         gateway = macro_geo.get("gateway")
         if gateway:
@@ -310,12 +543,16 @@ class SpatialPathReasoner:
                 "accuracy_level": "building_level" if "room" in civic else "city_level"
             }
 
+        accuracy_meters = None if is_virtual_overlay else (5.0 if "wall_jack" in civic or "desk_or_station" in civic else (25.0 if coords else None))
+
         return {
             "macro_location": macro_geo,
             "civic_location": civic,
             "coordinates": coords,
             "spatial_path_trail": path_steps,
-            "accuracy_estimate_meters": 5.0 if "wall_jack" in civic or "desk_or_station" in civic else (25.0 if coords else None)
+            "accuracy_estimate_meters": accuracy_meters,
+            "is_virtual_overlay": is_virtual_overlay,
+            "overlay_flags": list(overlay_flags)
         }
 
 

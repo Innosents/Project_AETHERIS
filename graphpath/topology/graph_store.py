@@ -1,5 +1,5 @@
 """
-GraphPath Topology Graph Store
+Project AETHERIS - Topology Graph Store
 Maintains nodes, physical link edges, and spatial distance state estimates.
 """
 
@@ -53,6 +53,7 @@ class GraphStore:
         """Upserts a directed physical link with spatial uncertainty metrics."""
         attrs = {
             "type": edge_type,
+            "edge_type": edge_type,
             "distance_m": distance_m,
             "variance_m2": variance_m2,
             "confidence_pct": confidence_pct,

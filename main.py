@@ -1,5 +1,5 @@
 """
-Project Aetherius / GraphPath Root Execution Wrapper
+Project AETHERIUS - Root Execution Wrapper
 """
 from graphpath.cli import main
 

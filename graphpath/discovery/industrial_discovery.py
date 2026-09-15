@@ -1,5 +1,5 @@
 """
-GraphPath Deep Industrial Protocol Discovery Engine
+Project AETHERIS - Deep Industrial Protocol Discovery Engine
 Implements authentic, non-disruptive discovery probes for:
 - Siemens S7Comm ISO-on-TCP (RFC 1006 COTP Handshake + SZL 0x0011 Module Read on Port 102)
 - EtherNet/IP CIP ListIdentity Encapsulation (Port 44818 for Rockwell/Allen-Bradley PLCs & HMIs)

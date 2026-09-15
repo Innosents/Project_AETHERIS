@@ -1,5 +1,5 @@
 """
-GraphPath Web UI REST API Routes and Graph Blueprint.
+Project AETHERIS - Web UI REST API Routes and Graph Blueprint.
 """
 
 from flask import Blueprint, jsonify, render_template_string, request

@@ -1,7 +1,7 @@
 """
-GraphPath Low-Level Raw Packet Sniffer & Hardware Timestamp Tap
-Utilizes Npcap / Scapy promiscuous capture to extract kernel-level microsecond RTTs
-and stream incoming CDP/LLDP frames into DiscoveryEngine.
+Project AETHERIS - Low-Level Raw Packet Sniffer & Hardware Timestamp Tap
+Incorporates automated driver-loop overhead calibration to eliminate
+Windows kernel dispatch delay from cable flight-time measurements.
 """
 
 import time
@@ -22,18 +22,16 @@ class RawPacketTap:
         self.interface = interface or self._detect_default_interface()
         self.on_packet_received = on_packet_received
         
-        # Pending RTT probes: (dst_ip, dst_port, src_port) -> {"tx_time_s": float, "samples": List[float]}
         self._pending_probes: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._sniffer: Optional[AsyncSniffer] = None
+        self.driver_overhead_us: float = 0.0
 
     @staticmethod
     def _detect_default_interface() -> Optional[str]:
-        """Discovers primary active physical Npcap interface name."""
         try:
             interfaces = get_windows_if_list()
             for iface in interfaces:
-                # Prefer Ethernet connections with valid default gateway
                 name = iface.get("name", "")
                 desc = iface.get("description", "").lower()
                 if ("ethernet" in desc or "realtek" in desc or "intel" in desc) and iface.get("ips"):
@@ -44,31 +42,51 @@ class RawPacketTap:
             pass
         return None
 
+    def calibrate_driver_overhead(self, iterations: int = 5) -> float:
+        """
+        Measures baseline OS execution time for building and transmitting a raw frame
+        to subtract dispatch latency from physical line measurements.
+        """
+        dummy_packet = Ether() / IP(dst="127.0.0.1") / TCP(dport=9)
+        deltas = []
+        for _ in range(iterations):
+            t0 = time.perf_counter_ns()
+            try:
+                sendp(dummy_packet, iface=self.interface, verbose=False)
+            except Exception:
+                pass
+            t1 = time.perf_counter_ns()
+            deltas.append((t1 - t0) / 1000.0)
+
+        # Baseline dispatch latency (lower quartile)
+        deltas.sort()
+        self.driver_overhead_us = deltas[len(deltas) // 4] if deltas else 0.0
+        return self.driver_overhead_us
+
     def _packet_handler(self, packet: Any) -> None:
-        """Processes captured packets from kernel filter buffer."""
-        # 1. Forward raw frames to passive L2 CDP/LLDP listeners
+        rx_ns = time.perf_counter_ns()
+
         if self.on_packet_received:
             self.on_packet_received(packet)
 
-        # 2. Extract TCP handshake response timestamps (SYN-ACK or RST)
         if packet.haslayer(IP) and packet.haslayer(TCP):
             ip_layer = packet[IP]
             tcp_layer = packet[TCP]
 
-            # Inbound response: match src_ip, src_port (target port), and dst_port (prober port)
             probe_key = f"{ip_layer.src}:{tcp_layer.sport}:{tcp_layer.dport}"
             
             with self._lock:
                 if probe_key in self._pending_probes:
-                    rx_time_s = float(packet.time)
-                    tx_time_s = self._pending_probes[probe_key]["tx_time_s"]
-                    rtt_us = (rx_time_s - tx_time_s) * 1_000_000.0
+                    tx_ns = self._pending_probes[probe_key]["tx_ns"]
+                    if tx_ns > 0:
+                        raw_rtt_us = (rx_ns - tx_ns) / 1000.0
+                        # Subtract driver dispatch latency
+                        net_rtt_us = max(0.1, raw_rtt_us - self.driver_overhead_us)
 
-                    if rtt_us > 0.0:
-                        self._pending_probes[probe_key]["samples"].append(rtt_us)
+                        if net_rtt_us < 50_000.0:
+                            self._pending_probes[probe_key]["samples"].append(net_rtt_us)
 
-    def start_listener(self, bpf_filter: str = "ether proto 0x88cc or ether host 01:00:0c:cc:cc:cc or tcp") -> None:
-        """Launches Scapy AsyncSniffer on Npcap interface."""
+    def start_listener(self, bpf_filter: str = "ether proto 0x88cc or ether host 01:00:0c:cc:cc:cc or tcp or udp") -> None:
         if self._sniffer and self._sniffer.running:
             return
 
@@ -81,7 +99,6 @@ class RawPacketTap:
         self._sniffer.start()
 
     def stop_listener(self) -> None:
-        """Stops background packet capture."""
         if self._sniffer and self._sniffer.running:
             self._sniffer.stop()
             self._sniffer = None
@@ -90,40 +107,35 @@ class RawPacketTap:
         self,
         target_ip: str,
         target_port: int,
+        target_mac: Optional[str] = None,
         source_port: int = 49152,
         burst_count: int = 5,
         inter_packet_gap_s: float = 0.005,
-        timeout_s: float = 0.5
+        timeout_s: float = 0.4
     ) -> List[float]:
-        """
-        Transmits a burst of raw TCP SYN probes, capturing kernel arrival timestamps.
-        Returns microsecond RTT readings.
-        """
         probe_key = f"{target_ip}:{target_port}:{source_port}"
         
         with self._lock:
             self._pending_probes[probe_key] = {
-                "tx_time_s": 0.0,
+                "tx_ns": 0,
                 "samples": []
             }
 
-        # Build raw TCP SYN probe
-        syn_packet = IP(dst=target_ip) / TCP(sport=source_port, dport=target_port, flags="S", seq=1000)
+        # Build Ethernet frame directly with target MAC to prevent inline ARP delays
+        eth_kwargs = {"dst": target_mac} if target_mac else {}
+        syn_packet = Ether(**eth_kwargs) / IP(dst=target_ip) / TCP(sport=source_port, dport=target_port, flags="S", seq=1000)
 
         for _ in range(burst_count):
-            tx_monotonic = time.time()
             with self._lock:
-                self._pending_probes[probe_key]["tx_time_s"] = tx_monotonic
+                self._pending_probes[probe_key]["tx_ns"] = time.perf_counter_ns()
             
-            # Direct NDIS raw packet transmission
             try:
-                sendp(Ether() / syn_packet, iface=self.interface, verbose=False)
+                sendp(syn_packet, iface=self.interface, verbose=False)
             except Exception:
                 pass
 
             time.sleep(inter_packet_gap_s)
 
-        # Wait for responses to drain
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             with self._lock:
@@ -133,6 +145,7 @@ class RawPacketTap:
 
         with self._lock:
             samples = list(self._pending_probes[probe_key]["samples"])
-            del self._pending_probes[probe_key]
+            if probe_key in self._pending_probes:
+                del self._pending_probes[probe_key]
 
         return samples

@@ -1,5 +1,5 @@
 """
-GraphPath Passive CDP & LLDP Topology Listener
+Project AETHERIS - Passive CDP & LLDP Topology Listener
 Passively captures Layer 2 multicast frames to map switch-to-switch risers,
 management SVIs, and trunk link hierarchies without administrative credentials.
 """

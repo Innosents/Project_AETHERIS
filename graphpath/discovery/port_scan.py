@@ -1,5 +1,5 @@
 """
-GraphPath High-Performance Port Scanner & Common Ports Repository
+Project AETHERIS - High-Performance Port Scanner & Common Ports Repository
 """
 
 import socket

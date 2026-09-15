@@ -1,5 +1,5 @@
 """
-GraphPath Core Discovery State Machine
+Project AETHERIS - Core Discovery State Machine
 Thread-safe, non-reentrant state orchestrator for multi-tier discovery.
 """
 

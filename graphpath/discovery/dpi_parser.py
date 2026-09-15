@@ -1,5 +1,5 @@
 """
-GraphPath Fast Deep Packet Inspection (DPI) & Protocol Stream Decoder
+Project AETHERIS - Fast Deep Packet Inspection (DPI) & Protocol Stream Decoder
 Parses unencrypted protocol headers and handshake metadata from mirrored SPAN / ERSPAN packet streams.
 Supports:
  - DHCP Discover/Request/Ack (Option 12 Hostname, Option 60 Vendor Class, Option 55 Fingerprint)

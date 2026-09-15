@@ -1,12 +1,12 @@
 """
-GraphPath Adaptive Discovery Orchestrator & Dynamic Protocol Shifting Engine
+Project AETHERIS - Adaptive Discovery Orchestrator & Dynamic Protocol Shifting Engine
 Ingests multi-signal discovery evidence (MAC OUI, TTL, open ports, passive DPI, banners)
 to calculate device class hypotheses, dynamically route prioritized deep probe queues,
 and execute Early Termination upon authoritative device identification.
 """
 
 import time
-from typing import Dict, Any, List, Optional, Set, Tuple
+from typing import Dict, Any, List, Optional, Set, Tuple, Union
 from dataclasses import dataclass, field
 from graphpath.discovery.deep_prober import (
     SmbProber,
@@ -21,6 +21,7 @@ from graphpath.discovery.deep_prober import (
     MercuryMspProber
 )
 from graphpath.core.device_classifier import DeviceClassifier
+from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
 
 @dataclass
 class EvidenceVector:
@@ -34,6 +35,10 @@ class EvidenceVector:
     subnet_cidr: str = ""
     vendor_hint: str = ""
     hostname_hint: str = ""
+    net_flight_us: Optional[float] = None
+    estimated_distance_m: Optional[float] = None
+    is_trunk: bool = False
+    port_id: Optional[str] = None
 
 @dataclass
 class HypothesisScore:
@@ -152,10 +157,18 @@ class HypothesisEngine:
 class AdaptiveProbeRouter:
     """Builds a prioritized deep probe execution plan and pruning list."""
 
-    @staticmethod
-    def build_plan(hypothesis: HypothesisScore, open_ports: List[int]) -> Tuple[List[str], List[str]]:
+    @classmethod
+    def build_plan(
+        cls,
+        hypothesis: HypothesisScore,
+        open_ports: List[int],
+        net_flight_us: Optional[float] = None,
+        estimated_distance_m: Optional[float] = None,
+        is_trunk: bool = False,
+        return_meta: bool = False,
+    ) -> Union[Tuple[List[str], List[str]], Tuple[List[str], List[str], Dict[str, Any]]]:
         """
-        Returns: (prioritized_probe_queue, pruned_probes_list)
+        Returns: (prioritized_probe_queue, pruned_probes_list) or (queue, pruned, spatial_meta)
         """
         ports_set = set(open_ports)
         queue: List[str] = []
@@ -210,6 +223,36 @@ class AdaptiveProbeRouter:
         if 1900 in ports_set and "ssdp" not in queue:
             queue.append("ssdp")
 
+        # Spatial Constraint Boundary Evaluation
+        spatial_eval = AdvancedSpatialProber.evaluate_spatial_pruning_boundary(
+            net_flight_us=net_flight_us,
+            estimated_distance_m=estimated_distance_m,
+            is_trunk=is_trunk,
+        )
+
+        spatial_meta: Dict[str, Any] = {
+            "spatial_state": spatial_eval["spatial_state"],
+            "bypass_copper_limits": spatial_eval["bypass_copper_limits"],
+            "prune_high_throughput": spatial_eval["prune_high_throughput"],
+            "reason": spatial_eval["reason"],
+            "net_flight_us": net_flight_us,
+            "estimated_distance_m": estimated_distance_m,
+            "is_trunk": is_trunk,
+            "spatial_pruned_probes": [],
+        }
+
+        # Enforce spatial constraint pruning against deep protocol probes
+        if spatial_eval["prune_high_throughput"]:
+            # Restrict RTSP streaming and high-throughput web sweeps on out-of-spec copper (>110m)
+            probes_to_prune = ["rtsp", "http_web", "heavy_web_crawl"]
+            for p in probes_to_prune:
+                if p in queue:
+                    queue.remove(p)
+                    pruned.append(p)
+                    spatial_meta["spatial_pruned_probes"].append(p)
+
+        if return_meta:
+            return queue, pruned, spatial_meta
         return queue, pruned
 
 
@@ -269,7 +312,14 @@ class AdaptiveDiscoveryOrchestrator:
             self.memory.record_host_archetype(ev.subnet_cidr, top_hypothesis.archetype)
 
         # 2. Build Targeted Probe Queue and Pruning List
-        probe_queue, pruned_list = AdaptiveProbeRouter.build_plan(top_hypothesis, ev.open_ports)
+        probe_queue, pruned_list, spatial_meta = AdaptiveProbeRouter.build_plan(
+            top_hypothesis,
+            ev.open_ports,
+            net_flight_us=ev.net_flight_us,
+            estimated_distance_m=ev.estimated_distance_m,
+            is_trunk=ev.is_trunk,
+            return_meta=True,
+        )
         self.metrics["probes_pruned"] += len(pruned_list)
 
         results: Dict[str, Any] = {
@@ -277,6 +327,8 @@ class AdaptiveDiscoveryOrchestrator:
             "top_hypothesis": top_hypothesis.archetype,
             "hypothesis_confidence": top_hypothesis.confidence,
             "evidence_factors": top_hypothesis.evidence_factors,
+            "spatial_state": spatial_meta["spatial_state"],
+            "spatial_pruning": spatial_meta,
             "probes_executed": [],
             "probes_pruned": pruned_list,
             "early_terminated": False,

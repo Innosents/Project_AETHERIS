@@ -1,5 +1,5 @@
 """
-GraphPath Asynchronous Web UI Server Runner.
+Project AETHERIS - Asynchronous Web UI Server Runner.
 """
 
 import threading

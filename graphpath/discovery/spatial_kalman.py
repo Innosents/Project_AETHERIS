@@ -1,5 +1,5 @@
 """
-GraphPath Spatial Kalman Dynamic Estimator
+Project AETHERIS - Spatial Kalman Dynamic Estimator
 Implements recursive state estimation across shared physical media channels.
 Propagates covariance shrinkage from high-confidence anchor nodes to noisy edge links.
 Supports multi-hop trunk links, inter-switch risers, and media-specific propagation velocities.

@@ -1,5 +1,5 @@
 """
-GraphPath Protocol Discovery & Deep Packet Inspection Layer.
+Project AETHERIS - Protocol Discovery & Deep Packet Inspection Layer.
 """
 
 from graphpath.discovery.arp_scan import arp_scan

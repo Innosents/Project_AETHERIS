@@ -1,5 +1,5 @@
 """
-GraphPath / Project AETHERIS Path & Environment Resolution Utilities
+Project AETHERIS - Path & Environment Resolution Utilities
 Provides unified base directory and static resource resolution across
 both standard Python execution and frozen PyInstaller (.exe) standalone packages.
 Supports Dynamic Hybrid Mounting: dynamically imports live source code

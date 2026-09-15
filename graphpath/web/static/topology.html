@@ -505,19 +505,88 @@
         }
       ];
 
-      if (cy) {
-        cy.elements().remove();
-        cy.add(sampleGraph);
-        refitLayout();
-        updateHUDTelemetry();
-      } else {
-        initCytoscape(sampleGraph);
+
+    // Connect WebSocket for live telemetry streaming
+    function connectWebSocket() {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws/telemetry`;
+      const socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        console.log('[AETHERIS WS] Connected to telemetry broadcast stream.');
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'TELEMETRY_UPDATE') {
+            handleLiveTelemetry(msg.payload);
+          }
+        } catch (err) {
+          console.error('[AETHERIS WS] Malformed frame:', err);
+        }
+      };
+
+      socket.onclose = () => {
+        console.warn('[AETHERIS WS] Stream disconnected. Retrying in 2s...');
+        setTimeout(connectWebSocket, 2000);
+      };
+    }
+
+    function handleLiveTelemetry(payload) {
+      if (!cy) return;
+
+      const nodeData = payload.node.data;
+      const edgeData = payload.edge.data;
+       
+      // Ensure root switch exists
+      if (cy.getElementById(edgeData.source).length === 0) {
+        cy.add({
+          group: 'nodes',
+          data: {
+            id: edgeData.source,
+            type: 'SWITCH',
+            archetype: 'NETWORK_INFRASTRUCTURE'
+          }
+        });
       }
+
+      // Upsert target node
+      const existingNode = cy.getElementById(nodeData.id);
+      if (existingNode.length > 0) {
+        existingNode.data(nodeData);
+      } else {
+        cy.add({ group: 'nodes', data: nodeData });
+      }
+
+      // Upsert physical link edge
+      const existingEdge = cy.getElementById(edgeData.id);
+      if (existingEdge.length > 0) {
+        existingEdge.data(edgeData);
+      } else {
+        cy.add({ group: 'edges', data: edgeData });
+      }
+
+      updateHUDTelemetry();
+      refitLayout();}
     }
 
     // Auto-bootstrap
     window.addEventListener('DOMContentLoaded', () => {
+      fetch('/api/topology')
+        .then(res => res.json())
+        .then(elements => {
+          if (elements && elements.length > 0) {
+            initCytoscape(elements);
+          } else {
       loadSimulationData();
+          }
+        connectWebSocket();
+        })
+        .catch(() => {
+          loadSimulationData();
+          connectWebSocket();
+        });
     });
   </script>
 </body>
