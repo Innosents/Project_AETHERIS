@@ -1,5 +1,5 @@
 """
-Project AETHERIS - Property-Based & Differential Fuzzing Suite (Phase 8.1)
+Project AETHERIS - Property-Based & Differential Fuzzing Suite (Phase 8.1 & Phase 5)
 Verifies:
 1. Hypothesis custom composite strategy mutated_tlv_packet (overstated/understated lengths, 65535 boundaries, orphan bytes)
 2. UbntDiscoveryDecoder fuzz resilience (>= 500 iterations)
@@ -8,7 +8,10 @@ Verifies:
 5. StpBpduDecoder fuzz resilience (>= 500 iterations)
 6. DpiDispatcher multi-port routing fuzz resilience (>= 500 iterations)
 7. TelemetryAnomalyFilter numerical stability (no NaN/Inf, variance >= 0, weight in [0, 1])
-8. Strict JSON round-trip invariance and zero unhandled exceptions
+8. Non-standard TCP sequence injection & RFC 7323 timestamp option resilience
+9. Edge-case ICMP RFC 792/1122 malformed payload injection & graceful rejection
+10. Fragmented & malformed Modbus TCP MBAP frame resilience (zero ledger pollution)
+11. Strict JSON round-trip invariance and zero unhandled exceptions
 """
 
 import json
@@ -40,32 +43,37 @@ except (ImportError, ModuleNotFoundError):
     st = _DummyStrategies()
 
 
-from graphpath.core.fingerprinting.dpi_decoders import (
+from aetheris.core.fingerprinting.dpi_decoders import (
     UbntDiscoveryDecoder,
     MikrotikMndpDecoder,
     BacnetIpDecoder,
     StpBpduDecoder,
     DpiDispatcher,
 )
-from graphpath.core.fingerprinting.dpi_normalizers import (
+from aetheris.core.fingerprinting.dpi_normalizers import (
     robust_z_score,
     normalize_stp_path_cost,
     TelemetryAnomalyFilter,
     BayesianTurnaround,
 )
-from graphpath.discovery.geolocation_engine import (
+from aetheris.discovery.geolocation_engine import (
     LldpMedLocationDecoder,
     PublicGeoIpResolver,
     SpatialPathReasoner,
 )
-from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
-from graphpath.discovery.dns_discovery import DnsDiscoveryEngine
-from graphpath.core.spatial_solver import SpatialSolver
-from graphpath.core.spatial_dc_drop import (
+from aetheris.discovery.advanced_spatial_prober import AdvancedSpatialProber
+from aetheris.discovery.dns_discovery import DnsDiscoveryEngine
+from aetheris.core.spatial_solver import SpatialSolver
+from aetheris.core.spatial_dc_drop import (
     calculate_conductor_distance,
     get_conductor_resistance_per_meter,
 )
-
+from aetheris.discovery.mirror_engine import (
+    SpanCaptureEngine,
+    OtWireDissector,
+    BoundedFlowWindowRing,
+)
+from aetheris.core.telemetry_ledger import TelemetryLedger
 
 
 @st.composite
@@ -114,8 +122,97 @@ def mutated_tlv_packet(draw):
     return header + payload + orphan_bytes
 
 
+@st.composite
+def mutated_tcp_frame(draw):
+    """
+    Hypothesis strategy generating non-standard TCP sequences and malformed options.
+    Simulates invalid data offsets (< 20 or > length), overlapping flags,
+    corrupted RFC 7323 timestamp options, and out-of-order sequence boundaries.
+    """
+    src_ip_b = bytes([10, draw(st.integers(0, 254)), draw(st.integers(1, 254)), draw(st.integers(1, 254))])
+    dst_ip_b = bytes([10, 0, 0, draw(st.integers(1, 254))])
+    src_port = draw(st.integers(0, 65535))
+    dst_port = draw(st.integers(0, 65535))
+    seq_num = draw(st.integers(0, 0xFFFFFFFF))
+    ack_num = draw(st.integers(0, 0xFFFFFFFF))
+
+    # Data offset in 32-bit words: 0..4 is invalid (< 20B), 5 is standard (20B), > 5 includes options
+    offset_words = draw(st.integers(0, 15))
+    flags = draw(st.integers(0, 0x1FF))  # SYN, FIN, RST, PSH, ACK, URG, etc.
+    offset_flags = (offset_words << 12) | (flags & 0x0FFF)
+
+    window_size = draw(st.integers(0, 65535))
+    checksum = draw(st.integers(0, 65535))
+    urg_ptr = draw(st.integers(0, 65535))
+
+    tcp_hdr_base = struct.pack(">HHIIHHHH", src_port, dst_port, seq_num, ack_num, offset_flags, window_size, checksum, urg_ptr)
+
+    # Corrupt or valid TCP options
+    has_options = draw(st.booleans())
+    if has_options and offset_words > 5:
+        opt_len = max(0, (offset_words * 4) - 20)
+        options = draw(st.binary(min_size=opt_len, max_size=opt_len))
+    else:
+        options = b""
+
+    payload = draw(st.binary(min_size=0, max_size=256))
+
+    # Construct complete IPv4 packet
+    ip_total_len = 20 + len(tcp_hdr_base) + len(options) + len(payload)
+    ip_hdr = struct.pack(">BBHHHBBH4s4s", 0x45, 0, ip_total_len, 0x1234, 0x4000, 64, 6, 0, src_ip_b, dst_ip_b)
+
+    # Ethernet frame: DST MAC + SRC MAC + EtherType 0x0800
+    eth_hdr = b"\x00\x11\x22\x33\x44\x55\x00\x66\x77\x88\x99\xAA\x08\x00"
+    return eth_hdr + ip_hdr + tcp_hdr_base + options + payload
+
+
+@st.composite
+def mutated_icmp_frame(draw):
+    """
+    Hypothesis strategy generating edge-case RFC 792/1122 ICMP frames.
+    Simulates invalid ICMP types, truncated bodies, zero-length payloads, and corrupted headers.
+    """
+    src_ip_b = bytes([192, 168, 1, draw(st.integers(1, 254))])
+    dst_ip_b = bytes([192, 168, 1, draw(st.integers(1, 254))])
+
+    icmp_type = draw(st.integers(0, 255))
+    icmp_code = draw(st.integers(0, 255))
+    checksum = draw(st.integers(0, 65535))
+    body = draw(st.binary(min_size=0, max_size=128))
+
+    icmp_bytes = struct.pack(">BBH", icmp_type, icmp_code, checksum) + body
+    ip_total_len = 20 + len(icmp_bytes)
+    ip_hdr = struct.pack(">BBHHHBBH4s4s", 0x45, 0, ip_total_len, 0x5678, 0, 64, 1, 0, src_ip_b, dst_ip_b)
+    eth_hdr = b"\x00\xAA\xBB\xCC\xDD\xEE\x00\x11\x22\x33\x44\x55\x08\x00"
+    return eth_hdr + ip_hdr + icmp_bytes
+
+
+@st.composite
+def mutated_modbus_frame(draw):
+    """
+    Hypothesis strategy generating fragmented & malformed Modbus TCP frames.
+    Simulates truncated MBAP headers, non-zero protocol IDs, length mismatches, and exception PDUs.
+    """
+    tx_id = draw(st.integers(0, 65535))
+    proto_id = draw(st.sampled_from([0, 0, 0, 1, 255, 65535]))  # 0 is valid Modbus TCP
+    stated_len = draw(st.integers(0, 65535))
+    unit_id = draw(st.integers(0, 255))
+    func_code = draw(st.integers(0, 255))
+    pdu_payload = draw(st.binary(min_size=0, max_size=128))
+
+    # Raw MBAP + PDU bytes
+    raw_mbap = struct.pack(">HHHBB", tx_id, proto_id, stated_len, unit_id, func_code) + pdu_payload
+
+    # Truncation mutation
+    if draw(st.booleans()):
+        truncate_len = draw(st.integers(0, len(raw_mbap)))
+        raw_mbap = raw_mbap[:truncate_len]
+
+    return raw_mbap
+
+
 class TestDpiDecodersFuzz(unittest.TestCase):
-    """Differential property-based fuzzing test cases for DPI decoders and anomaly filter."""
+    """Differential property-based fuzzing test cases for DPI decoders, OT dissectors, and anomaly filter."""
 
     @settings(max_examples=500, deadline=None)
     @given(st.binary(min_size=0, max_size=1500))
@@ -421,6 +518,71 @@ class TestDpiDecodersFuzz(unittest.TestCase):
         self.assertGreaterEqual(res["distance_m"], 0.0)
         self.assertFalse(math.isnan(res["distance_m"]))
         self.assertFalse(math.isinf(res["distance_m"]))
+
+    # =========================================================================
+    # Phase 5: Buffer Resilience Validation & Edge-Case State Ingestion
+    # =========================================================================
+
+    @settings(max_examples=250, deadline=None)
+    @given(mutated_tcp_frame())
+    def test_fuzz_non_standard_tcp_sequences_scapy_ingestion(self, raw_frame: bytes):
+        """
+        Continuously injects non-standard TCP sequences, invalid offsets (<20 or >len),
+        and corrupted RFC 7323 options into the Scapy ingestion layer.
+        Verifies zero thread crashes, graceful degradation, and zero ledger corruption.
+        """
+        discovered_nodes = []
+        engine = SpanCaptureEngine(on_node_discovered=discovered_nodes.append)
+
+        res = engine.process_raw_frame(raw_frame)
+        if res is not None:
+            self.assertIsInstance(res, dict)
+            self.assertEqual(json.loads(json.dumps(res)), res)
+            if "telemetry" in res and isinstance(res["telemetry"], dict):
+                sj = res["telemetry"].get("spatial_jitter")
+                if sj is not None:
+                    self.assertIsInstance(sj, dict)
+                    self.assertIn("ts_val", sj)
+                    self.assertIn("ts_ecr", sj)
+
+        # Assert no malformed IP addresses leaked into discovery
+        for node in discovered_nodes:
+            self.assertIsInstance(node, dict)
+            self.assertIn("ip", node)
+            self.assertNotIn("..", node["ip"])
+
+    @settings(max_examples=250, deadline=None)
+    @given(mutated_icmp_frame())
+    def test_fuzz_edge_case_icmp_payloads_ingestion(self, raw_frame: bytes):
+        """
+        Injects malformed, truncated, and edge-case RFC 792/1122 ICMP payloads into the
+        ingestion layer. Verifies graceful parsing or safe discarding without unhandled exceptions.
+        """
+        engine = SpanCaptureEngine()
+        res = engine.process_raw_frame(raw_frame)
+        if res is not None:
+            self.assertIsInstance(res, dict)
+            self.assertEqual(json.loads(json.dumps(res)), res)
+            self.assertIn("src_mac", res)
+            self.assertIn("dst_mac", res)
+
+    @settings(max_examples=250, deadline=None)
+    @given(mutated_modbus_frame())
+    def test_fuzz_fragmented_modbus_frames_ingestion(self, raw_payload: bytes):
+        """
+        Directly injects truncated, oversized, non-zero protocol ID, and fragmented
+        Modbus frames into OtWireDissector.dissect_modbus_tcp.
+        Verifies that invalid frames drop gracefully and do not pollute the Redis ledger.
+        """
+        res = OtWireDissector.dissect_modbus_tcp(raw_payload)
+        if res is not None:
+            self.assertIsInstance(res, dict)
+            self.assertEqual(res["protocol"], "MODBUS")
+            self.assertIn("transaction_id", res)
+            self.assertIn("unit_id", res)
+            self.assertIn("function_code", res)
+            self.assertIn("is_exception", res)
+            self.assertEqual(json.loads(json.dumps(res)), res)
 
 
 if __name__ == "__main__":

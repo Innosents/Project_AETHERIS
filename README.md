@@ -1,11 +1,11 @@
 # Project AETHERIS v0.1.0
 ### Autonomous Zero-Credential Cyber-Physical Orchestration Swarm
 
-Project AETHERIS is an autonomous, unauthenticated network discovery and cyber-physical auditing swarm powered by the GraphPath spatial chassis. Engineered for high-security campus, enterprise, and OT/ICS environments, AETHERIS maps physical infrastructure, low-voltage conductor runs, and switchport topologies without administrative credentials, SNMP community strings, or agent deployments.
+Project AETHERIS is an autonomous, unauthenticated network discovery and cyber-physical auditing swarm powered by the Aetheris spatial chassis. Engineered for high-security campus, enterprise, and OT/ICS environments, AETHERIS maps physical infrastructure, low-voltage conductor runs, and switchport topologies without administrative credentials, SNMP community strings, or agent deployments.
 
 ---
 
-## Key Capabilities (GraphPath Chassis)
+## Key Capabilities (Aetheris Chassis)
 
 * **Zero-Credential Topology Reconstruction:** Passively ingests ERSPAN/SPAN, DHCP Option 55 fingerprints, and multicast beacons (LLDP-MED, mDNS, WS-Discovery) to construct device identity profiles.
 * **Dual-Payload Baseband Physics Modeling:** Deconvolves link speeds (1Gbps Full-Duplex vs. 100Mbps Bridge) and serialization delays using differential packet timing (Delta t flight analysis).
@@ -37,5 +37,5 @@ python scripts/seed_ground_truth.py
 # Execute AETHERIS multivector serialization sweep
 python scripts/run_port1_multivector_sweep.py
 
-# Launch GraphPath topology visualizer
+# Launch Aetheris topology visualizer
 python run_visualizer.py

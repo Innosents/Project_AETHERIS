@@ -5,7 +5,7 @@ industrial exposure (Modbus 502), default SNMP community auditing, and vendor ha
 """
 
 import pytest
-from graphpath.core.security_auditor import SecurityAuditor
+from aetheris.core.security_auditor import SecurityAuditor
 
 
 def test_security_auditor_telnet_risk():

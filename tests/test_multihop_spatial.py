@@ -3,7 +3,7 @@ Unit Tests for Multi-Hop Switch Trunk and Riser Propagation
 """
 
 import unittest
-from graphpath.discovery.spatial_kalman import SpatialKalmanEstimator, MEDIA_NVP_PRESETS, C_VACUUM_M_PER_US
+from aetheris.discovery.spatial_kalman import SpatialKalmanEstimator, MEDIA_NVP_PRESETS, C_VACUUM_M_PER_US
 
 
 class TestMultiHopSpatialPropagation(unittest.TestCase):

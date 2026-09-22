@@ -2,7 +2,7 @@
 
 **Role & Domain:** IoT Solutions Engineering / Enterprise Edge-Compute Architecture  
 **System:** Project AETHERIS (L1/L2 Spatial Engine)  
-**Primary Modules:** [`graphpath/core/traffic_matrix.py`](file:///e:/Project_AETHERIS/graphpath/core/traffic_matrix.py), [`graphpath/discovery/dpi_parser.py`](file:///e:/Project_AETHERIS/graphpath/discovery/dpi_parser.py), [`graphpath/discovery/geolocation_engine.py`](file:///e:/Project_AETHERIS/graphpath/discovery/geolocation_engine.py), [`graphpath/discovery/mirror_engine.py`](file:///e:/Project_AETHERIS/graphpath/discovery/mirror_engine.py)
+**Primary Modules:** [`aetheris/core/traffic_matrix.py`](file:///e:/Project_AETHERIS/aetheris/core/traffic_matrix.py), [`aetheris/discovery/dpi_parser.py`](file:///e:/Project_AETHERIS/aetheris/discovery/dpi_parser.py), [`aetheris/discovery/geolocation_engine.py`](file:///e:/Project_AETHERIS/aetheris/discovery/geolocation_engine.py), [`aetheris/discovery/mirror_engine.py`](file:///e:/Project_AETHERIS/aetheris/discovery/mirror_engine.py)
 
 ---
 
@@ -34,7 +34,7 @@ graph TD
 ### 2.1 Zero-Lock Sharded Lookaside Architecture
 In high-throughput enterprise networks, central locks on connection flow tables cause severe thread contention, buffer bloat, and packet drops. To guarantee zero-lock contention across concurrent packet ingestion workers, AETHERIS implements a 32-partition sharded architecture:
 $$\text{Shard Index} = \text{hash}(\text{Flow 4-Tuple}) \pmod{32}$$
-Each shard maintains an independent, re-entrant lock guarding its connection map and per-host statistics. Similarly, [`ShardedCivicCache`](file:///e:/Project_AETHERIS/graphpath/core/traffic_matrix.py) partitions host IP-to-civic associations across 32 independent LRU shards:
+Each shard maintains an independent, re-entrant lock guarding its connection map and per-host statistics. Similarly, [`ShardedCivicCache`](file:///e:/Project_AETHERIS/aetheris/core/traffic_matrix.py) partitions host IP-to-civic associations across 32 independent LRU shards:
 $$\text{Civic Shard Index} = \text{hash}(\text{IP}) \pmod{32}$$
 Benchmarked under 100 simultaneous threads executing 4,000 interleaved operations, this sharded model delivers peak lock latency $< 0.45\,\text{ms}$, completely eliminating cross-thread blocking.
 
@@ -62,7 +62,7 @@ To detect physical layer impersonation (e.g., an off-path rogue proxy claiming a
 +-------+-------+---------------------+---------------------+
     1       1              4                     4
 ```
-By comparing local arrival timestamps with `TSval` clock ticks across round-trips, the prober computes passive propagation flight time ($\tau_{\text{flight}}$). If an access controller or NVR registered to `Rack-01, Room-104` exhibits a flight time $> 2000\,\mu\text{s}$, [`SecurityAuditor`](file:///e:/Project_AETHERIS/graphpath/core/security_auditor.py) flags `ACCESS_CONTROLLER_SPATIAL_IMPERSONATION`, unmasking unauthorized off-path tunnels or reverse proxies.
+By comparing local arrival timestamps with `TSval` clock ticks across round-trips, the prober computes passive propagation flight time ($\tau_{\text{flight}}$). If an access controller or NVR registered to `Rack-01, Room-104` exhibits a flight time $> 2000\,\mu\text{s}$, [`SecurityAuditor`](file:///e:/Project_AETHERIS/aetheris/core/security_auditor.py) flags `ACCESS_CONTROLLER_SPATIAL_IMPERSONATION`, unmasking unauthorized off-path tunnels or reverse proxies.
 
 ---
 

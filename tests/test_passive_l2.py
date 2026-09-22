@@ -19,9 +19,9 @@ from scapy.contrib.cdp import (
     CDPMsgNativeVLAN,
     CDPAddrRecordIPv4,
 )
-from graphpath.discovery.discovery_engine import DiscoveryEngine
-from graphpath.topology.graph_store import GraphStore
-from graphpath.discovery.spatial_kalman import C_VACUUM_M_PER_US
+from aetheris.discovery.discovery_engine import DiscoveryEngine
+from aetheris.topology.graph_store import GraphStore
+from aetheris.discovery.spatial_kalman import C_VACUUM_M_PER_US
 
 
 class TestPassiveL2Listener(unittest.TestCase):

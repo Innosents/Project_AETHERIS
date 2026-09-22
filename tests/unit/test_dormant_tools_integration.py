@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, TCP
 
-from graphpath.cli.sweep import SubnetSweeper
-from graphpath.discovery.mercury_spatial_resolver import MercurySpatialResolver
-from graphpath.core.spatial_normalizer import SpatialNormalizationEngine
+from aetheris.cli.sweep import SubnetSweeper
+from aetheris.discovery.mercury_spatial_resolver import MercurySpatialResolver
+from aetheris.core.spatial_normalizer import SpatialNormalizationEngine
 
 
 class TestDormantToolsIntegration(unittest.TestCase):
@@ -89,7 +89,7 @@ class TestDormantToolsIntegration(unittest.TestCase):
         ip = "192.168.1.180"
         mac = "00:0F:9F:12:34:56"  # Mercury Security OUI
 
-        with patch("graphpath.cli.sweep.srp1", return_value=None), \
+        with patch("aetheris.cli.sweep.srp1", return_value=None), \
              patch.object(self.sweeper.industrial_prober, "probe_mercury_access") as mock_msp:
             mock_msp.return_value = {
                 "vendor": "Mercury Security",

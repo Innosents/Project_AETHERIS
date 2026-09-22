@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from graphpath.core.spatial import SpatialEstimator, C_VACUUM
+from aetheris.core.spatial import SpatialEstimator, C_VACUUM
 
 
 def test_linux_stack_deconvolution_collapses_artifact():

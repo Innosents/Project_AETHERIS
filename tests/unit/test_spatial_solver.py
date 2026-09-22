@@ -16,7 +16,7 @@ import math
 import numpy as np
 import pytest
 
-from graphpath.core.spatial_solver import (
+from aetheris.core.spatial_solver import (
     SpatialSolver,
     SpatialSolverResult,
     SpatialDistanceEstimate,

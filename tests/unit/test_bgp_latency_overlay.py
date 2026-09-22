@@ -1,5 +1,5 @@
 """
-Unit tests for GRAPHPATH-STEP-07: Macroscopic BGP Latency Overlays & SD-WAN/VPN Unmasking.
+Unit tests for AETHERIS-STEP-07: Macroscopic BGP Latency Overlays & SD-WAN/VPN Unmasking.
 Validates Haversine geodesic distance calculation, 1.5x BGP path inflation scalar,
 FLAG_SD_WAN_TUNNEL_OVERLAY, FLAG_CLOUD_VPN_ENCAPSULATED, and virtual pseudo-node pruning.
 """
@@ -8,9 +8,9 @@ import json
 import pytest
 from typing import Dict, Any
 
-from graphpath.discovery.geolocation_engine import PublicGeoIpResolver, SpatialPathReasoner
-from graphpath.discovery.dns_discovery import DnsDiscoveryEngine
-from graphpath.core.spatial_solver import SpatialSolver
+from aetheris.discovery.geolocation_engine import PublicGeoIpResolver, SpatialPathReasoner
+from aetheris.discovery.dns_discovery import DnsDiscoveryEngine
+from aetheris.core.spatial_solver import SpatialSolver
 
 
 class TestBgpLatencyOverlay:

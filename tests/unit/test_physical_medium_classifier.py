@@ -9,12 +9,12 @@ Verifies:
 
 import unittest
 from unittest.mock import patch, MagicMock
-from graphpath.core.spatial_normalizer import (
+from aetheris.core.spatial_normalizer import (
     PhysicalMediumClassifier,
     SpatialNormalizationEngine,
     SpatialEvidenceBound
 )
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.cli.sweep import SubnetSweeper
 
 
 class TestPhysicalMediumClassifier(unittest.TestCase):
@@ -75,7 +75,7 @@ class TestSubnetSweeperMediumIntegration(unittest.TestCase):
         mock_tap.execute_rtt_pulse_burst.return_value = [15.00, 15.01, 15.005, 15.02, 15.008]
         self.sweeper.engine.packet_tap = mock_tap
 
-        with patch("graphpath.cli.sweep.srp1", return_value=None):
+        with patch("aetheris.cli.sweep.srp1", return_value=None):
             self.sweeper.fingerprint_and_probe_host("192.168.1.50", "00:11:22:33:44:55")
 
         node_id = "host_192_168_1_50"
@@ -95,7 +95,7 @@ class TestSubnetSweeperMediumIntegration(unittest.TestCase):
         mock_tap.execute_rtt_pulse_burst.return_value = [15.0, 18.5, 12.0, 17.2, 14.1]
         self.sweeper.engine.packet_tap = mock_tap
 
-        with patch("graphpath.cli.sweep.srp1", return_value=None):
+        with patch("aetheris.cli.sweep.srp1", return_value=None):
             self.sweeper.fingerprint_and_probe_host("192.168.1.51", "00:22:33:44:55:66")
 
         node_id = "host_192_168_1_51"

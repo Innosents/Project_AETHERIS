@@ -2,7 +2,7 @@
 
 **Role & Domain:** IoT Solutions Engineering / Cyber-Physical Physical-Layer Security  
 **System:** Project AETHERIS (L1/L2 Spatial Engine)  
-**Primary Modules:** [`graphpath/core/spatial_dc_drop.py`](file:///e:/Project_AETHERIS/graphpath/core/spatial_dc_drop.py), [`graphpath/core/security_auditor.py`](file:///e:/Project_AETHERIS/graphpath/core/security_auditor.py), [`graphpath/discovery/advanced_spatial_prober.py`](file:///e:/Project_AETHERIS/graphpath/discovery/advanced_spatial_prober.py)
+**Primary Modules:** [`aetheris/core/spatial_dc_drop.py`](file:///e:/Project_AETHERIS/aetheris/core/spatial_dc_drop.py), [`aetheris/core/security_auditor.py`](file:///e:/Project_AETHERIS/aetheris/core/security_auditor.py), [`aetheris/discovery/advanced_spatial_prober.py`](file:///e:/Project_AETHERIS/aetheris/discovery/advanced_spatial_prober.py)
 
 ---
 
@@ -56,7 +56,7 @@ This locks the true quiescent baseline and safely ignores 50 Hz relay chatter an
 When an unauthorized hardware tap is spliced into an RS-485 / OSDP reader cable:
 1. **DC Resistance Divergence:** The parasitic splice contact resistance and tap load produce an excess resistance:
    $$\Delta R_{\text{excess}} = \frac{\Delta V}{I_{\text{load}}} - R_{\text{loop\_expected}}$$
-   If $\Delta R_{\text{excess}} > 0.85\,\Omega$, [`SecurityAuditor`](file:///e:/Project_AETHERIS/graphpath/core/security_auditor.py) triggers `INLINE_HARDWARE_TAP_DETECTED`.
+   If $\Delta R_{\text{excess}} > 0.85\,\Omega$, [`SecurityAuditor`](file:///e:/Project_AETHERIS/aetheris/core/security_auditor.py) triggers `INLINE_HARDWARE_TAP_DETECTED`.
 2. **High-Frequency Baud-Rate Slew Divergence:** Splicing additional PCB traces and transceiver inputs introduces parasitic shunt capacitance ($C_{\text{parasitic}} \approx 80\text{--}250\,\text{pF}$), rounding RS-485 bit transitions and degrading rise time:
    $$\Delta t_{\text{rise}} \approx 2.2 \cdot R_{\text{terminal}} \cdot C_{\text{total}}$$
    A divergence ratio $> 1.45\times$ between measured baud-rate propagation and DC drop distance corroborates the presence of an inline physical interceptor.

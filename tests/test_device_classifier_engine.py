@@ -10,7 +10,7 @@ Covers all 9 algorithmic specification edge cases across:
 
 import numpy as np
 import pytest
-from graphpath.core.device_classifier_engine import NetworkClassifierEngine, TelemetryBuffer
+from aetheris.core.device_classifier_engine import NetworkClassifierEngine, TelemetryBuffer
 
 
 @pytest.fixture
@@ -168,4 +168,51 @@ def test_bayesian_posterior_simplex_normalization(classifier_engine):
     assert abs(sum(posteriors.values()) - 1.0) < 1e-5
     for p in posteriors.values():
         assert 0.0 <= p <= 1.0
+
+
+# Case 11: Hexagonal port conformance, typed payload ingestion, and classify_channel
+def test_hexagonal_port_conformance_and_typed_classification(classifier_engine):
+    from aetheris.core.ports.classifier_engine_port import (
+        ClassifierEngineResult,
+        DeviceClassifierEnginePort,
+        DeviceObservationPayload,
+        HeuristicScore,
+    )
+
+    # 1. Protocol inheritance
+    assert issubclass(NetworkClassifierEngine, DeviceClassifierEnginePort)
+    assert isinstance(classifier_engine, DeviceClassifierEnginePort)
+
+    # 2. Ingest via DeviceObservationPayload
+    channel = ("192.168.1.100", "192.168.1.1")
+    obs1 = DeviceObservationPayload(channel_key=channel, timestamp=2000.0, size=64, op_code="SYN")
+    meta = classifier_engine.ingest_telemetry_event(obs1)
+    assert meta["channel"] == channel
+    assert meta["size_count"] == 1
+
+    obs2 = DeviceObservationPayload(channel_key=channel, timestamp=2000.010, size=1460, op_code="SYN_ACK")
+    classifier_engine.ingest_telemetry_event(obs2)
+
+    # 3. classify_channel returns typed ClassifierEngineResult
+    res = classifier_engine.classify_channel(channel)
+    assert isinstance(res, ClassifierEngineResult)
+    assert res.channel == channel
+    assert res["channel"] == channel
+    assert res.dominant_archetype in ("LINUX_KERNEL_SERVER", "EMBEDDED_RTOS_DEVICE")
+    assert 0.0 <= res.confidence <= 1.0
+    assert "dominant_archetype" in res
+
+    # 4. HeuristicScore schema validation
+    score = HeuristicScore(
+        archetype="LINUX_KERNEL_SERVER",
+        score=-1.25,
+        confidence=0.75,
+        kl_divergence=0.42,
+        markov_likelihood=-0.83,
+        spectral_delta=1.5,
+    )
+    assert score.archetype == "LINUX_KERNEL_SERVER"
+    assert score["confidence"] == 0.75
+    assert score.kl_divergence == 0.42
+
 

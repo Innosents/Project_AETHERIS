@@ -6,7 +6,7 @@ environment variable ingestion, and IP allowlist filtering.
 
 import os
 import pytest
-from graphpath.core.scope_guard import ScopeAuthorizationGuard, get_scope_guard, configure_scope_guard
+from aetheris.core.scope_guard import ScopeAuthorizationGuard, get_scope_guard, configure_scope_guard
 
 
 def test_scope_guard_in_scope_and_exclusions():

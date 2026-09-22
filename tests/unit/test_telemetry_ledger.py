@@ -9,8 +9,8 @@ import time
 import numpy as np
 import pytest
 from pathlib import Path
-from graphpath.core.telemetry_ledger import TelemetryLedger, ConvergenceRecord
-from graphpath.core.spatial_mcmc import AffineInvariantSpatialMCMC, C_VACUUM
+from aetheris.core.telemetry_ledger import TelemetryLedger, ConvergenceRecord
+from aetheris.core.spatial_mcmc import AffineInvariantSpatialMCMC, C_VACUUM
 
 
 @pytest.fixture

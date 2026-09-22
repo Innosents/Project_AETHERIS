@@ -3,8 +3,8 @@ Unit Tests for DeviceClassifier classify_oui, EXTRA_OUIS, and UI Identity Label 
 """
 
 import pytest
-from graphpath.core.device_classifier import DeviceClassifier
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.core.device_classifier import DeviceClassifier
+from aetheris.cli.sweep import SubnetSweeper
 
 
 def test_classify_oui_structured_hints():

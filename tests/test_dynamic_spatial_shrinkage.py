@@ -7,7 +7,7 @@ varying cable run lengths, physical NVP shifts, and Gaussian timing noise.
 import unittest
 import math
 import random
-from graphpath.discovery.spatial_kalman import SpatialKalmanEstimator, C_VACUUM_M_PER_US
+from aetheris.discovery.spatial_kalman import SpatialKalmanEstimator, C_VACUUM_M_PER_US
 
 
 class TestDynamicSpatialShrinkage(unittest.TestCase):

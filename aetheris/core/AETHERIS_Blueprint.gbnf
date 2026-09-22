@@ -1,0 +1,5 @@
+root ::= "{" ws "\"blueprint_id\"" ws ":" ws string "," ws "\"target_module\"" ws ":" ws string "," ws "\"ast_mutation\"" ws ":" ws string "," ws "\"validation_protocol\"" ws ":" ws validation_obj "}"
+validation_obj ::= "{" ws "\"test_target\"" ws ":" ws string "," ws "\"fallback_action\"" ws ":" ws fallback_enum "}"
+fallback_enum ::= "\"rollback\"" | "\"halt\"" | "\"log_only\""
+string ::= "\"" [^"]* "\""
+ws ::= [ \t\n]*

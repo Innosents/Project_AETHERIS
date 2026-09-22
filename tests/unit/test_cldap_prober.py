@@ -22,12 +22,12 @@ from typing import Optional, Dict, Any
 
 import pytest
 
-from graphpath.core.probers import (
+from aetheris.core.probers import (
     probe_cldap_endpoint,
     build_cldap_netlogon_ping,
     parse_cldap_response,
 )
-from graphpath.core.probers.cldap import (
+from aetheris.core.probers.cldap import (
     _ber_tag,
     DS_PDC_FLAG,
     DS_GC_FLAG,
@@ -99,8 +99,8 @@ class TestCldapProber:
     """Test suite verifying CLDAP UDP 389 Active Directory Engine capabilities."""
 
     def test_package_exports(self):
-        """Assert core CLDAP prober functions are exported in graphpath.core.probers."""
-        import graphpath.core.probers as probers
+        """Assert core CLDAP prober functions are exported in aetheris.core.probers."""
+        import aetheris.core.probers as probers
         assert hasattr(probers, "probe_cldap_endpoint")
         assert hasattr(probers, "build_cldap_netlogon_ping")
         assert hasattr(probers, "parse_cldap_response")

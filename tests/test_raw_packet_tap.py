@@ -5,7 +5,7 @@ Unit Tests for RawPacketTap Kernel-Level Timestamp Extraction
 import time
 import unittest
 from scapy.layers.inet import IP, TCP
-from graphpath.discovery.raw_packet_tap import RawPacketTap
+from aetheris.discovery.raw_packet_tap import RawPacketTap
 
 
 class TestRawPacketTap(unittest.TestCase):

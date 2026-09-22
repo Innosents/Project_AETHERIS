@@ -16,8 +16,8 @@ import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
-from graphpath.mcp.spatial_server import app, latest_telemetry, active_store
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.mcp.spatial_server import app, latest_telemetry, active_store
+from aetheris.cli.sweep import SubnetSweeper
 
 
 @pytest.fixture(autouse=True)

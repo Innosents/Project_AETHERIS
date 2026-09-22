@@ -8,9 +8,9 @@ accurately assign appropriate archetypes before MCMC deconvolution.
 
 import pytest
 from unittest.mock import patch, MagicMock
-from graphpath.cli.sweep import SubnetSweeper
-from graphpath.core.device_classifier import DeviceClassifier
-from graphpath.discovery.fingerprint import fingerprint_device
+from aetheris.cli.sweep import SubnetSweeper
+from aetheris.core.device_classifier import DeviceClassifier
+from aetheris.discovery.fingerprint import fingerprint_device
 
 
 def test_map_fingerprint_to_archetype_rules():
@@ -54,7 +54,7 @@ def test_apple_iphone_ttl64_prevents_linux_server_collapse():
     )
 
     # Mock srp1 port scan to return TTL 64 (standard for iOS and Linux)
-    with patch("graphpath.cli.sweep.srp1") as mock_srp1:
+    with patch("aetheris.cli.sweep.srp1") as mock_srp1:
         mock_resp = MagicMock()
         mock_resp.haslayer.return_value = True
         mock_resp.__getitem__.side_effect = lambda layer: MagicMock(ttl=64, flags=0x14)
@@ -83,7 +83,7 @@ def test_samsung_smart_tv_ttl64_maps_to_cctv_video():
         api_url=None
     )
 
-    with patch("graphpath.cli.sweep.srp1") as mock_srp1:
+    with patch("aetheris.cli.sweep.srp1") as mock_srp1:
         mock_resp = MagicMock()
         mock_resp.haslayer.return_value = True
         mock_resp.__getitem__.side_effect = lambda layer: MagicMock(ttl=64, flags=0x14)
@@ -112,7 +112,7 @@ def test_mercury_access_control_ttl64_maps_to_industrial_ot():
         api_url=None
     )
 
-    with patch("graphpath.cli.sweep.srp1") as mock_srp1:
+    with patch("aetheris.cli.sweep.srp1") as mock_srp1:
         mock_resp = MagicMock()
         mock_resp.haslayer.return_value = True
         mock_resp.__getitem__.side_effect = lambda layer: MagicMock(ttl=64, flags=0x14)
@@ -150,7 +150,7 @@ def test_active_mdns_cache_informs_sweep_classification():
         "source": "active_mdns"
     }
 
-    with patch("graphpath.cli.sweep.srp1") as mock_srp1:
+    with patch("aetheris.cli.sweep.srp1") as mock_srp1:
         mock_resp = MagicMock()
         mock_resp.haslayer.return_value = True
         mock_resp.__getitem__.side_effect = lambda layer: MagicMock(ttl=64, flags=0x14)

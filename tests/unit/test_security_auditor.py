@@ -12,7 +12,7 @@ Verifies:
 import json
 import pytest
 
-from graphpath.core.security_auditor import SecurityAuditor
+from aetheris.core.security_auditor import SecurityAuditor
 
 
 class TestSecurityAuditorPhysicalThreats:

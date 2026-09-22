@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
 
-from graphpath.core.crawlers.bridge_fdb import (
+from aetheris.core.crawlers.bridge_fdb import (
     BridgeFdbCrawler,
     BridgeFDBCrawler,
     crawl_switch_fdb,
@@ -33,7 +33,7 @@ from graphpath.core.crawlers.bridge_fdb import (
     IF_ALIAS,
     SYS_DESCR,
 )
-from graphpath.core.probers.sanitization import sanitize_prober_payload
+from aetheris.core.probers.sanitization import sanitize_prober_payload
 
 
 # =========================================================================

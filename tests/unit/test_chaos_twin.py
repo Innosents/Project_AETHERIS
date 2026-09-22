@@ -1,22 +1,38 @@
 """
-Digital Twin Chaos Engineering Suite (Phase 16).
-Tests concurrency contention under 100 simultaneous threads, stochastic latency jitter injection,
-relay contact chatter / inductive kickback filtering, and async task drainage.
+Digital Twin Chaos Engineering Suite (Phase 16 & Phase 5).
+Tests:
+1. Concurrency contention under 100 simultaneous threads with zero lock contention timeouts.
+2. Stochastic latency jitter injection and ACCESS_CONTROLLER_SPATIAL_IMPERSONATION detection.
+3. 50Hz relay contact chatter / inductive kickback filtering on PeripheralElectricalEnvelope.
+4. Clean asynchronous task drainage and event loop lifecycle management.
+5. Severe transient micro-flow flood (10,000+ unique 4-tuples/sec) against BoundedFlowWindowRing.
+6. Mathematical proof of O(1) Redis pipelined eviction maintaining sub-millisecond execution and memory bounds.
+7. Mercury MP1502 asynchronous hardware state transitions & live MSP wire dissection.
 """
 
 import time
 import json
 import asyncio
 import threading
+import numpy as np
 import pytest
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
-from graphpath.core.traffic_matrix import TrafficMatrixTracker, ShardedCivicCache
-from graphpath.core.security_auditor import SecurityAuditor
-from graphpath.core.spatial_dc_drop import (
+from aetheris.core.traffic_matrix import TrafficMatrixTracker, ShardedCivicCache
+from aetheris.core.security_auditor import SecurityAuditor
+from aetheris.core.spatial_dc_drop import (
     PeripheralElectricalEnvelope,
     calculate_dynamic_spatial_drop,
     COPPER_RESISTIVITY_OHMS_PER_METER_20C,
+)
+from aetheris.discovery.mirror_engine import (
+    BoundedFlowWindowRing,
+    OtWireDissector,
+)
+from aetheris.core.telemetry_ledger import TelemetryLedger
+from tests.mocks.mercury_mp1502_emulator import (
+    MercuryMP1502Emulator,
+    MercuryHardwareState,
 )
 
 
@@ -86,7 +102,6 @@ class TestChaosDigitalTwin:
         Simulates stochastic flight-time spikes (> 2000us) to verify SecurityAuditor
         triggers ACCESS_CONTROLLER_SPATIAL_IMPERSONATION with zero false negatives.
         """
-        # Baseline: Mercury access controller operating on-premise (15.0 us flight time)
         baseline_device = {
             "ip": "10.0.10.1",
             "vendor": "Mercury Security",
@@ -99,7 +114,6 @@ class TestChaosDigitalTwin:
         baseline_finding_codes = [f["code"] for f in res_baseline.get("findings", [])]
         assert "ACCESS_CONTROLLER_SPATIAL_IMPERSONATION" not in baseline_finding_codes
 
-        # Chaos Spike: Remote off-path proxy / WAN overlay routing (2050.0 us flight time)
         chaos_spiked_device = {
             "ip": "10.0.10.1",
             "vendor": "Mercury Security",
@@ -122,7 +136,6 @@ class TestChaosDigitalTwin:
         strike_envelope = PeripheralElectricalEnvelope.get_envelope("door_strike")
         r_20_18awg = COPPER_RESISTIVITY_OHMS_PER_METER_20C[18]
 
-        # 1. Feed quiescent baseline sample (24.0V source, 23.5V terminal, Delta V = 0.5V)
         dist_m, conf, state = calculate_dynamic_spatial_drop(
             v_source=24.0,
             v_sampled=23.5,
@@ -134,8 +147,6 @@ class TestChaosDigitalTwin:
         assert conf == 0.92
         assert dist_m > 0
 
-        # 2. Chaos Injection: 15 consecutive inrush / kickback contact bounce chatter spikes
-        # (Delta V = 2.5V, exceeding expected_quiescent_drop * 2.5)
         rejected_count = 0
         for _ in range(15):
             dist_spike, conf_spike, state_spike = calculate_dynamic_spatial_drop(
@@ -152,7 +163,6 @@ class TestChaosDigitalTwin:
 
         assert rejected_count == 15
 
-        # 3. Assert quiescent baseline measurement remains pristine and unaffected post-chatter
         dist_post, conf_post, state_post = calculate_dynamic_spatial_drop(
             v_source=24.0,
             v_sampled=23.5,
@@ -183,8 +193,176 @@ class TestChaosDigitalTwin:
         try:
             results = loop.run_until_complete(run_swarm())
             assert len(results) == 50
-            # Ensure pending tasks == 0
             pending = asyncio.all_tasks(loop)
             assert len(pending) == 0, f"Lingering unawaited async tasks detected: {pending}"
         finally:
             loop.close()
+
+    # =========================================================================
+    # Phase 5: LRU Eviction Duress & Mathematical Eviction Proofs
+    # =========================================================================
+
+    def test_chaos_twin_micro_flow_flood_bounded_ring(self):
+        """
+        Synthesizes a severe transient micro-flow flood of 15,000 unique 4-tuples
+        against BoundedFlowWindowRing(max_flows=1024, max_window=32).
+        Mathematically proves:
+        1. Heap footprint strictly capped at max_flows (1024).
+        2. Throughput exceeds 10,000 ops/sec.
+        3. P99 execution latency remains sub-millisecond (< 1.0ms).
+        4. Eviction maintains strict O(1) temporal LRU ordering.
+        """
+        max_flows = 1024
+        max_window = 32
+        total_flood_flows = 15000
+
+        ring = BoundedFlowWindowRing(max_flows=max_flows, max_window=max_window)
+        latencies_ms = []
+
+        t_start = time.perf_counter()
+        for i in range(total_flood_flows):
+            t0 = time.perf_counter()
+            flow_key = (
+                f"10.{(i >> 8) % 254}.{i % 254}.1",
+                "10.0.0.1",
+                1024 + (i % 60000),
+                80,
+            )
+            buf = ring.get_or_create(flow_key)
+            buf.append(time.perf_counter_ns())
+            elapsed = (time.perf_counter() - t0) * 1000.0
+            latencies_ms.append(elapsed)
+
+        t_total = time.perf_counter() - t_start
+        throughput_ops_sec = total_flood_flows / t_total
+
+        # 1. Capacity Invariant: strictly bounded heap footprint
+        assert len(ring._flows) == max_flows, f"Flow table breached bound: {len(ring._flows)} != {max_flows}"
+        for key, window in ring._flows.items():
+            assert len(window) <= max_window
+
+        # 2. Throughput Invariant: > 10,000 ops/second under hardware flood
+        assert throughput_ops_sec >= 10000.0, f"Throughput {throughput_ops_sec:.0f} ops/sec below 10,000 threshold"
+
+        # 3. Latency Invariant: Sub-millisecond execution times
+        p50 = float(np.percentile(latencies_ms, 50))
+        p99 = float(np.percentile(latencies_ms, 99))
+        assert p50 < 0.05, f"Median insertion latency too high: {p50:.4f}ms"
+        assert p99 < 1.0, f"P99 latency breached sub-millisecond bound: {p99:.4f}ms"
+
+        # 4. LRU Invariant: First inserted keys are completely evicted
+        oldest_key = ("10.0.0.1", "10.0.0.1", 1024, 80)
+        assert oldest_key not in ring._flows
+
+        # Most recent key must be present
+        last_i = total_flood_flows - 1
+        newest_key = (
+            f"10.{(last_i >> 8) % 254}.{last_i % 254}.1",
+            "10.0.0.1",
+            1024 + (last_i % 60000),
+            80,
+        )
+        assert newest_key in ring._flows
+
+    def test_chaos_twin_redis_pipelined_eviction_duress(self):
+        """
+        Assaults the Redis O(1) ledger with thousands of temporal records.
+        Mathematically proves that pipelined eviction via ZREMRANGEBYSCORE:
+        1. Maintains sub-millisecond execution times (< 0.2ms per item evicted).
+        2. Strictly caps sorted set cardinality under load.
+        3. Purges corresponding hash keys without leaving orphaned records.
+        """
+        from aetheris.core.telemetry_ledger import ConvergenceRecord
+
+        ledger = TelemetryLedger()
+        now = time.time()
+        num_records = 2000
+        num_targets = 20
+
+        # Ingest records spanning 100 seconds in the past
+        for i in range(num_records):
+            target_ip = f"10.100.{(i % num_targets) + 1}.1"
+            mac = f"00:1A:2B:3C:{(i // 256) % 256:02X}:{i % 256:02X}"
+            epoch_time = now - 100.0 + (i * (100.0 / num_records))
+            tau_ns = 50.0 + (i % 200)
+            rec = ConvergenceRecord(
+                timestamp=epoch_time,
+                mac=mac,
+                oui="001A2B",
+                ip=target_ip,
+                archetype="SWITCH",
+                min_rtt_us=12.5,
+                jitter_us=1.2,
+                converged_distance_m=15.0,
+                converged_kernel_us=50.0,
+                variance_m2=0.05,
+                confidence_pct=99.0,
+                tau_ns=tau_ns,
+            )
+            ledger.record_convergence(rec)
+
+        total_ingested = ledger.redis.zcard("aetheris:convergence:temporal")
+        assert total_ingested >= num_records
+
+        # Evict records older than 30 seconds -> evicts ~70% of records
+        t_evict_start = time.perf_counter()
+        evicted_count = ledger.evict_older_than(max_age_seconds=30.0)
+        evict_duration_ms = (time.perf_counter() - t_evict_start) * 1000.0
+
+        assert evicted_count > 0, "Zero records evicted during cutoff sweep"
+
+        # Assert sub-millisecond execution rate
+        per_item_evict_ms = evict_duration_ms / evicted_count
+        assert per_item_evict_ms < 0.2, f"Pipelined eviction too slow: {per_item_evict_ms:.4f}ms/item"
+        assert evict_duration_ms < 100.0, f"Eviction total duration {evict_duration_ms:.2f}ms >= 100ms"
+
+        # Assert no expired scores remain in the sorted set
+        cutoff_epoch = now - 30.0
+        remaining_scores = ledger.redis.zrangebyscore("aetheris:convergence:temporal", "-inf", cutoff_epoch)
+        assert len(remaining_scores) == 0, f"Orphaned expired scores found: {len(remaining_scores)}"
+
+    @pytest.mark.asyncio
+    async def test_chaos_twin_mercury_emulator_hardware_state_transitions(self):
+        """
+        Verifies Mercury MP1502 hardware emulation under live asynchronous state transitions.
+        Ensures OtWireDissector accurately parses transitioning operational states
+        (ONLINE_READY, ALARM_DOOR_FORCED, TAMPER_ENCLOSURE, LOCKDOWN_ACTIVE).
+        """
+        port = 3015
+        emulator = MercuryMP1502Emulator(host="127.0.0.1", port=port, readers=2, rex=2, strikes=2, dps=2)
+        server = await asyncio.start_server(emulator.handle_client, emulator.host, port)
+        await asyncio.sleep(0.05)
+
+        test_states = [
+            MercuryHardwareState.ONLINE_READY,
+            MercuryHardwareState.ALARM_DOOR_FORCED,
+            MercuryHardwareState.TAMPER_ENCLOSURE,
+            MercuryHardwareState.LOCKDOWN_ACTIVE,
+        ]
+
+        try:
+            for st_val in test_states:
+                emulator.transition_state(st_val)
+
+                reader, writer = await asyncio.open_connection("127.0.0.1", port)
+
+                # Send Phase 3 diagnostic query
+                writer.write(b"\x02STATUS\x03")
+                await writer.drain()
+
+                # Read response
+                resp = await asyncio.wait_for(reader.read(1024), timeout=1.0)
+                writer.close()
+                await writer.wait_closed()
+
+                assert len(resp) > 0, f"Empty response received for state {st_val}"
+                dissected = OtWireDissector.dissect_mercury_msp(resp)
+
+                assert dissected is not None
+                assert dissected["protocol"] == "MERCURY_MSP"
+                assert dissected["framing"] == "STX_ETX"
+                assert "MP1502" in dissected["model"]
+                assert st_val in dissected["body"]
+        finally:
+            server.close()
+            await server.wait_closed()

@@ -10,13 +10,13 @@ Verifies:
 """
 
 import unittest
-from graphpath.core.adaptive_orchestrator import (
+from aetheris.core.adaptive_orchestrator import (
     EvidenceVector,
     HypothesisScore,
     AdaptiveProbeRouter,
     AdaptiveDiscoveryOrchestrator,
 )
-from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
+from aetheris.discovery.advanced_spatial_prober import AdvancedSpatialProber
 
 
 class TestSpatialProtocolPruning(unittest.TestCase):

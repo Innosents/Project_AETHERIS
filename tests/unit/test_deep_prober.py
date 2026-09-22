@@ -11,10 +11,10 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
-from graphpath.discovery.deep_prober import SshProber, HttpTitleProber, RtspProber, ModbusProber
-from graphpath.core.dip_manager import DeviceIdentityProfileManager
-from graphpath.core.spatial_normalizer import SpatialNormalizationEngine, SpatialEvidenceBound
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.discovery.deep_prober import SshProber, HttpTitleProber, RtspProber, ModbusProber
+from aetheris.core.dip_manager import DeviceIdentityProfileManager
+from aetheris.core.spatial_normalizer import SpatialNormalizationEngine, SpatialEvidenceBound
+from aetheris.cli.sweep import SubnetSweeper
 
 
 def test_ssh_prober_banner_parsing():
@@ -143,7 +143,7 @@ def test_confidence_elevation_below_96():
         "type": "server"
     }
 
-    with patch("graphpath.discovery.deep_prober.SshProber.probe_ssh_banner", return_value=mock_ssh):
+    with patch("aetheris.discovery.deep_prober.SshProber.probe_ssh_banner", return_value=mock_ssh):
         # Execute probe on a mock host
         ip = "192.168.1.42"
         mac = "02:42:AC:11:00:02"

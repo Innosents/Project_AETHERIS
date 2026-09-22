@@ -9,13 +9,13 @@ Verifies:
 
 import unittest
 from unittest.mock import patch, MagicMock
-from graphpath.core.spatial_bayesian import (
+from aetheris.core.spatial_bayesian import (
     BayesianEvidenceFusion,
     LOCKED_SWITCH_FABRIC_DELAY_OFFSET_US,
     LOCKED_SWITCH_FABRIC_DELAY_OFFSET_SEC,
     RECALIBRATED_KERNEL_BASELINES_US
 )
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.cli.sweep import SubnetSweeper
 
 
 class TestGroundTruthIngestion(unittest.TestCase):
@@ -99,7 +99,7 @@ class TestGroundTruthIngestion(unittest.TestCase):
 
     def test_intermediate_hop_penalty(self):
         """Verifies 18.5ns intermediate switch hop penalty calculation and constants."""
-        from graphpath.core.spatial_bayesian import (
+        from aetheris.core.spatial_bayesian import (
             INTERMEDIATE_HOP_PENALTY_NS,
             INTERMEDIATE_HOP_PENALTY_US,
             INTERMEDIATE_HOP_PENALTY_SEC
@@ -170,7 +170,7 @@ class TestSubnetSweeperGroundTruthLocking(unittest.TestCase):
         mock_tap.execute_rtt_pulse_burst.return_value = [1185.0, 1186.0, 1185.5, 1187.0, 1185.8]
         self.sweeper.engine.packet_tap = mock_tap
 
-        with patch("graphpath.cli.sweep.srp1", return_value=None):
+        with patch("aetheris.cli.sweep.srp1", return_value=None):
             self.sweeper.fingerprint_and_probe_host("192.168.1.86", "28:EA:0B:AA:BB:CC")
 
         node_id = "host_192_168_1_86"
@@ -185,7 +185,7 @@ class TestSubnetSweeperGroundTruthLocking(unittest.TestCase):
         mock_tap.execute_rtt_pulse_burst.return_value = [2200.0, 2201.0, 2200.5]
         self.sweeper.engine.packet_tap = mock_tap
 
-        with patch("graphpath.cli.sweep.srp1", return_value=None):
+        with patch("aetheris.cli.sweep.srp1", return_value=None):
             self.sweeper.fingerprint_and_probe_host("192.168.1.65", "BC:7E:8B:0D:82:CA")
 
         node_id = "host_192_168_1_65"

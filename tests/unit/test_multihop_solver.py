@@ -7,9 +7,9 @@ ASIC forwarding overhead summation, and downstream MCMC riser deduction.
 import pytest
 import networkx as nx
 import numpy as np
-from graphpath.topology.graph_store import GraphStore
-from graphpath.core.multihop_solver import MultiHopRiserSolver
-from graphpath.core.spatial_mcmc import AffineInvariantSpatialMCMC, C_VACUUM
+from aetheris.topology.graph_store import GraphStore
+from aetheris.core.multihop_solver import MultiHopRiserSolver
+from aetheris.core.spatial_mcmc import AffineInvariantSpatialMCMC, C_VACUUM
 
 
 def test_multihop_same_switch():

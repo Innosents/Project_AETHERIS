@@ -3,8 +3,8 @@ Unit Tests for Discovery Pipeline & Kalman Graph Integration
 """
 
 import unittest
-from graphpath.topology.graph_store import GraphStore
-from graphpath.discovery.discovery_engine import DiscoveryEngine
+from aetheris.topology.graph_store import GraphStore
+from aetheris.discovery.discovery_engine import DiscoveryEngine
 
 
 class TestDiscoveryPipelineIntegration(unittest.TestCase):

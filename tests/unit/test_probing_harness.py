@@ -1,6 +1,6 @@
 import pytest
-from graphpath.discovery.dpi_parser import DpiParser
-from graphpath.core.dip_manager import DeviceIdentityProfileManager
+from aetheris.discovery.dpi_parser import DpiParser
+from aetheris.core.dip_manager import DeviceIdentityProfileManager
 
 def test_passive_dpi_feed_into_dip(tmp_path):
     dip_file = tmp_path / "test_dip.json"

@@ -7,8 +7,8 @@ O(1) lookup, archetype inference, and integration with DeviceClassifier.
 import tempfile
 import os
 import pytest
-from graphpath.core.oui_registry import OuiRegistry
-from graphpath.core.device_classifier import DeviceClassifier
+from aetheris.core.oui_registry import OuiRegistry
+from aetheris.core.device_classifier import DeviceClassifier
 
 
 SAMPLE_VENDOR_MACS_XML = """<?xml version="1.0" encoding="UTF-8"?>

@@ -10,10 +10,10 @@ import unittest
 from unittest.mock import MagicMock, patch
 from scapy.layers.l2 import Ether, ARP
 
-from graphpath.cli.sweep import SubnetSweeper
-from graphpath.core.device_classifier import DeviceClassifier
-from graphpath.core.dip_manager import DeviceIdentityProfileManager
-from graphpath.core.spatial_mcmc import AffineInvariantSpatialMCMC
+from aetheris.cli.sweep import SubnetSweeper
+from aetheris.core.device_classifier import DeviceClassifier
+from aetheris.core.dip_manager import DeviceIdentityProfileManager
+from aetheris.core.spatial_mcmc import AffineInvariantSpatialMCMC
 
 
 class TestAnchorResolutionAndFoxconn(unittest.TestCase):

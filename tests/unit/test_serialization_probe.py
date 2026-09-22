@@ -11,7 +11,7 @@ Verifies:
 import pytest
 import sqlite3
 from unittest.mock import patch
-from graphpath.discovery.serialization_probe import SerializationProber
+from aetheris.discovery.serialization_probe import SerializationProber
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def prober(tmp_path):
 
 def test_serialization_delta_gigabit_link(prober):
     """Verifies line-rate gigabit link exhibits Delta t <= 90 us."""
-    with patch("graphpath.discovery.serialization_probe.sr1", return_value=None):
+    with patch("aetheris.discovery.serialization_probe.sr1", return_value=None):
         res = prober.probe_host("192.168.1.70")
         assert res["ip"] == "192.168.1.70"
         assert res["delta_t_serialization_us"] <= 90.0
@@ -33,7 +33,7 @@ def test_serialization_delta_gigabit_link(prober):
 
 def test_serialization_delta_100m_bridge(prober):
     """Verifies 100 Mbps bridge / Fast Ethernet exhibits Delta t > 90 us."""
-    with patch("graphpath.discovery.serialization_probe.sr1", return_value=None):
+    with patch("aetheris.discovery.serialization_probe.sr1", return_value=None):
         res = prober.probe_host("192.168.1.67")
         assert res["ip"] == "192.168.1.67"
         assert res["delta_t_serialization_us"] > 90.0
@@ -44,7 +44,7 @@ def test_serialization_delta_100m_bridge(prober):
 
 def test_custom_samples_threshold(prober):
     """Verifies custom RTT samples correctly trigger 90 us threshold."""
-    with patch("graphpath.discovery.serialization_probe.sr1", return_value=None), \
+    with patch("aetheris.discovery.serialization_probe.sr1", return_value=None), \
          patch.object(prober, "PORT1_HARDWARE_SPECS", {"192.168.1.99": {"nominal_delta_us": 150.0}}):
         res = prober.probe_host("192.168.1.99")
         assert res["is_throttled"]

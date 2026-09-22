@@ -5,7 +5,7 @@ voltage drop DC resistance, RTT 5th percentile bounds) and inverse-variance fusi
 """
 
 import pytest
-from graphpath.core.spatial_normalizer import (
+from aetheris.core.spatial_normalizer import (
     SpatialNormalizationEngine,
     SpatialEvidenceBound
 )
@@ -105,4 +105,33 @@ def test_fuse_evidence_inverse_variance():
     empty_fused = SpatialNormalizationEngine.fuse_evidence([])
     assert empty_fused["distance_m"] == 15.0
     assert empty_fused["confidence_pct"] == 50.0
+
+
+def test_calculate_dynamic_line_impedance():
+    # 100 ns one-way flight time -> ~20.686m on 0.69 NVP Cat6
+    # v_prop = 0.69 * 299792458 = 206,856,796 m/s
+    # distance = 100e-9 * 206856796 = 20.686m
+    res = SpatialNormalizationEngine.calculate_dynamic_line_impedance(
+        tau_flight_ns=100.0,
+        jitter_ns=5.0,
+        nvp=0.69
+    )
+    assert res["distance_m"] == pytest.approx(20.686, rel=1e-2)
+    assert 95.0 <= res["z0_ohms"] <= 105.0
+    assert res["is_within_spec"] is True
+    assert res["v_prop_m_s"] == pytest.approx(206856796.0, rel=1e-3)
+
+
+def test_normalize_rtt_pulse_rfc7323_tau():
+    # Calibrated RFC 7323 tau flight time of 75 ns -> ~15.5m
+    bound = SpatialNormalizationEngine.normalize_rtt_pulse(
+        rtt_samples_us=[0.150, 0.152, 0.151],
+        archetype="LINUX_SERVER",
+        anchor_offset_us=0.0,
+        tau_flight_ns=75.0
+    )
+    assert bound.constraint_type == "RFC7323_TAU_FLIGHT"
+    assert bound.confidence_weight >= 0.70
+    assert bound.distance_estimate_m == pytest.approx(15.51, rel=1e-2)
+
 

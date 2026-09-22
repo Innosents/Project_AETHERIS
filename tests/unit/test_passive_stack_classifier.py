@@ -10,8 +10,8 @@ Verifies:
 
 import pytest
 import sqlite3
-from graphpath.discovery.fingerprint import PassiveStackClassifier
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.discovery.fingerprint import PassiveStackClassifier
+from aetheris.cli.sweep import SubnetSweeper
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ def test_subnet_sweeper_port1_multivector():
         interface=None,
         api_url=None
     )
-    with patch("graphpath.discovery.serialization_probe.sr1", return_value=None):
+    with patch("aetheris.discovery.serialization_probe.sr1", return_value=None):
         results = sweeper.sweep_port1_multivector(["192.168.1.73", "192.168.1.67"])
         assert len(results) == 2
 

@@ -9,8 +9,8 @@ Verifies:
 
 import unittest
 from unittest.mock import patch, MagicMock
-from graphpath.discovery.bridge_fdb_crawler import BridgeFDBCrawler, BridgeFdbCrawler
-from graphpath.cli.sweep import SubnetSweeper
+from aetheris.discovery.bridge_fdb_crawler import BridgeFDBCrawler, BridgeFdbCrawler
+from aetheris.cli.sweep import SubnetSweeper
 
 
 class TestBridgeFDBCrawler(unittest.TestCase):
@@ -136,8 +136,8 @@ class TestSubnetSweeperFDBWiring(unittest.TestCase):
             }
         }
 
-        with patch("graphpath.discovery.bridge_fdb_crawler.BridgeFDBCrawler.crawl", return_value=mock_mappings), \
-             patch("graphpath.discovery.bridge_fdb_crawler.BridgeFDBCrawler.get_switch_identity", return_value="Core-Gateway-01"), \
+        with patch("aetheris.discovery.bridge_fdb_crawler.BridgeFDBCrawler.crawl", return_value=mock_mappings), \
+             patch("aetheris.discovery.bridge_fdb_crawler.BridgeFDBCrawler.get_switch_identity", return_value="Core-Gateway-01"), \
              patch.object(sweeper, "run_arp_sweep", return_value=[]), \
              patch.object(sweeper.engine, "start_network_tap"), \
              patch.object(sweeper.engine, "stop_network_tap"):

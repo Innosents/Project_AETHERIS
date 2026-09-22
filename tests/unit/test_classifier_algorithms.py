@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from graphpath.core.device_classifier_engine import NetworkClassifierEngine
+from aetheris.core.device_classifier_engine import NetworkClassifierEngine
 
 MOCK_PROFILES = {
     "LINUX_SERVER": {

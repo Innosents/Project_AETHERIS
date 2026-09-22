@@ -3,8 +3,8 @@ Unit Tests for Phase 2: Advanced Spatial Prober & Conductor Physics
 """
 
 import unittest
-from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
-from graphpath.discovery.mercury_spatial_resolver import MercurySpatialResolver
+from aetheris.discovery.advanced_spatial_prober import AdvancedSpatialProber
+from aetheris.discovery.mercury_spatial_resolver import MercurySpatialResolver
 
 
 class TestAdvancedSpatialProber(unittest.TestCase):

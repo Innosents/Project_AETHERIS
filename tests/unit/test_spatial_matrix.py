@@ -9,8 +9,8 @@ import threading
 import pytest
 from typing import Dict, Any
 
-from graphpath.core.traffic_matrix import TrafficMatrixTracker, ShardedCivicCache
-from graphpath.discovery.geolocation_engine import LldpMedLocationDecoder
+from aetheris.core.traffic_matrix import TrafficMatrixTracker, ShardedCivicCache
+from aetheris.discovery.geolocation_engine import LldpMedLocationDecoder
 
 
 class TestSpatialMatrixInjection:

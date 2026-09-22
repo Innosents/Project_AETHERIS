@@ -16,8 +16,8 @@ import unittest
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, TCP
 
-from graphpath.discovery.mirror_engine import SpanCaptureEngine
-from graphpath.discovery.advanced_spatial_prober import AdvancedSpatialProber
+from aetheris.discovery.mirror_engine import SpanCaptureEngine
+from aetheris.discovery.advanced_spatial_prober import AdvancedSpatialProber
 
 
 def build_tcp_frame_with_timestamps(
@@ -179,6 +179,57 @@ class TestMirrorSpatial(unittest.TestCase):
         self.assertEqual(telemetry["protocol"], "MODBUS")
         # No spatial_jitter since options were absent, but schema is intact
         self.assertNotIn("spatial_jitter", telemetry)
+
+    def test_spatial_attenuation_derivation(self):
+        """Verifies spatial attenuation and cable flight derivation across nominal and bloat-discarded frames."""
+        # 1. Direct mathematical verification of physics formula
+        atten_res = AdvancedSpatialProber.calculate_spatial_attenuation(
+            flight_us=60.0,
+            baseline_deduction_us=50.0,
+            nvp=0.69,
+            nominal_attenuation_db_per_meter=0.22,
+        )
+        self.assertIn("tau_flight_us", atten_res)
+        self.assertIn("spatial_attenuation_db", atten_res)
+        self.assertEqual(atten_res["tau_flight_us"], 5.0)  # (60 - 50) / 2
+        self.assertEqual(atten_res["tau_flight_ns"], 5000.0)
+        # Distance = 5e-6 * 3e8 * 0.69 = 1035.0 -> clamped to 150m max spec
+        self.assertLessEqual(atten_res["estimated_distance_m"], 150.0)
+        self.assertGreater(atten_res["spatial_attenuation_db"], 0.0)
+
+        # 2. Engine ingestion of nominal frame
+        frame = build_tcp_frame_with_timestamps(
+            src_ip="192.168.1.50",
+            dst_ip="192.168.1.1",
+            src_port=443,
+            dst_port=52000,
+            ts_val=9999,
+            ts_ecr=8888,
+        )
+        flow = self.engine.process_raw_frame(frame)
+        telemetry = flow.get("telemetry", {})
+        self.assertIn("spatial_jitter", telemetry)
+        jitter = telemetry["spatial_jitter"]
+        self.assertFalse(jitter["buffer_bloat_discard"])
+        self.assertIn("spatial_attenuation_db", jitter)
+        self.assertIn("estimated_distance_m", jitter)
+        self.assertIn("tau_flight_ns", jitter)
+        self.assertIn("ptp_hardware_timestamped", jitter)
+
+    def test_ptp_hardware_timestamp_viability(self):
+        """Verifies PTP IEEE 1588 hardware capability evaluation across platforms."""
+        ptp_eval = AdvancedSpatialProber.evaluate_ptp_hardware_timestamp_viability("eth0")
+        self.assertIsInstance(ptp_eval, dict)
+        self.assertIn("ptp_supported", ptp_eval)
+        self.assertIn("timestamp_source", ptp_eval)
+        self.assertIn("platform", ptp_eval)
+        self.assertIn("resolution_ns", ptp_eval)
+        self.assertIn("reason", ptp_eval)
+
+        # Engine summary stats should expose PTP status
+        stats = self.engine.get_summary_stats()
+        self.assertIn("ptp_hardware_timestamping", stats)
+        self.assertEqual(stats["ptp_hardware_timestamping"]["platform"], ptp_eval["platform"])
 
 
 if __name__ == "__main__":

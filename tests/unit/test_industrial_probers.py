@@ -13,7 +13,7 @@ from typing import Any, Dict
 
 import pytest
 
-from graphpath.core.probers.industrial_prober import (
+from aetheris.core.probers.industrial_prober import (
     CIP_CMD_LIST_IDENTITY,
     CIP_PORT,
     S7_PORT,
@@ -27,7 +27,7 @@ from graphpath.core.probers.industrial_prober import (
     probe_industrial_host,
     probe_siemens_s7,
 )
-from graphpath.core.probers.sanitization import sanitize_prober_payload
+from aetheris.core.probers.sanitization import sanitize_prober_payload
 
 
 def _find_free_port() -> int:
@@ -454,4 +454,63 @@ def test_pysnmp_teardown_clean():
     # Call close_dispatcher explicitly to ensure zero carrier leak
     engine.close_dispatcher()
     assert True
+
+
+def test_modbus_diagnostic_probe_and_response():
+    from aetheris.core.probers.industrial_prober import (
+        build_modbus_diagnostic_probe,
+        parse_modbus_diagnostic_response,
+    )
+    probe = build_modbus_diagnostic_probe(sub_function=0x0000, data=b"\xAA\x55")
+    assert len(probe) == 12
+    assert probe[7] == 0x08  # FC 0x08 Diagnostics
+    assert probe[8:10] == b"\x00\x00"  # Sub-function 0x0000
+
+    # Mock response
+    mock_resp = bytes([0x00, 0x08, 0x00, 0x00, 0x00, 0x06, 0x01, 0x08, 0x00, 0x00, 0xAA, 0x55])
+    parsed = parse_modbus_diagnostic_response(mock_resp)
+    assert parsed["is_diagnostic_echo"] is True
+    assert parsed["sub_function"] == 0
+    assert parsed["diagnostic_data"] == "aa55"
+
+
+def test_mercury_diagnostic_probe_and_parsing():
+    from aetheris.core.probers.industrial_prober import (
+        build_mercury_diagnostic_probe,
+        parse_mercury_diagnostic_response,
+    )
+    probe = build_mercury_diagnostic_probe()
+    assert probe == b"\x02STATUS\x03"
+
+    mock_resp = b"\x02LP1502_v1.29.1_R2_S2_X1_D2\x03"
+    parsed = parse_mercury_diagnostic_response(mock_resp)
+    assert "LP1502" in parsed["model"]
+    assert parsed["peripherals"]["readers"] == 2
+    assert parsed["peripherals"]["strikes"] == 2
+    assert parsed["peripherals"]["rex"] == 1
+    assert parsed["peripherals"]["dps"] == 2
+
+
+def test_axis_diagnostic_response_parsing():
+    from aetheris.core.probers.industrial_prober import (
+        build_axis_rtsp_options_probe,
+        parse_axis_response,
+    )
+    rtsp_probe = build_axis_rtsp_options_probe("192.168.1.100", 554)
+    assert b"OPTIONS rtsp://192.168.1.100:554/" in rtsp_probe
+
+    mock_http_resp = (
+        "HTTP/1.1 200 OK\r\n"
+        "Server: Apache\r\n\r\n"
+        "root.Brand.Brand=AXIS\r\n"
+        "root.Brand.ProdNbr=P3245-V\r\n"
+        "root.Properties.System.Version=10.12.1\r\n"
+        "root.Properties.System.SerialNumber=ACCC8E123456\r\n"
+    )
+    parsed = parse_axis_response(mock_http_resp)
+    assert parsed["vendor"] == "Axis Communications"
+    assert "P3245-V" in parsed["model"]
+    assert parsed["firmware"] == "10.12.1"
+    assert parsed["serial_number"] == "ACCC8E123456"
+
 

@@ -12,8 +12,8 @@ Verifies:
 import json
 import pytest
 
-from graphpath.core.device_classifier import DeviceClassifier
-from graphpath.discovery.advanced_spatial_prober import (
+from aetheris.core.device_classifier import DeviceClassifier
+from aetheris.discovery.advanced_spatial_prober import (
     AdvancedSpatialProber,
     DEFAULT_NVP,
     NVP_CAMERA_POE,

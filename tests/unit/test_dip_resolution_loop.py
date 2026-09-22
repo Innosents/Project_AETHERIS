@@ -8,8 +8,8 @@ and integrates with passive DPI and active service probes.
 import tempfile
 import pytest
 from unittest.mock import MagicMock
-from graphpath.core.dip_manager import DeviceIdentityProfileManager
-from graphpath.discovery.discovery_engine import DiscoveryEngine
+from aetheris.core.dip_manager import DeviceIdentityProfileManager
+from aetheris.discovery.discovery_engine import DiscoveryEngine
 
 
 def test_dip_get_or_create_and_lookup():

@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from graphpath.core.spatial_mcmc import AffineInvariantSpatialMCMC, MCMCResult, C_VACUUM
+from aetheris.core.spatial_mcmc import AffineInvariantSpatialMCMC, MCMCResult, C_VACUUM
 
 
 def test_mcmc_convergence_on_true_distance():

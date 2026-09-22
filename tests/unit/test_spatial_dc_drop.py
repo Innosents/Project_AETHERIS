@@ -15,7 +15,7 @@ import json
 import math
 import pytest
 
-from graphpath.core import (
+from aetheris.core import (
     DcConductorSolver,
     calculate_conductor_distance,
     resolve_peripheral_telemetry,
@@ -25,7 +25,7 @@ from graphpath.core import (
     calculate_dynamic_spatial_drop,
     evaluate_baud_rate_divergence,
 )
-from graphpath.core.spatial_dc_drop import (
+from aetheris.core.spatial_dc_drop import (
     get_conductor_resistance_per_meter,
     COPPER_RESISTIVITY_OHMS_PER_METER_20C,
     COPPER_TEMP_COEFF_ALPHA,
@@ -39,8 +39,8 @@ class TestSpatialDcDrop:
     """Test suite for DC Conductor Voltage-Drop Spatial Engine."""
 
     def test_package_exports(self):
-        """Verify that all core DC drop components are exported in graphpath.core."""
-        import graphpath.core as core
+        """Verify that all core DC drop components are exported in aetheris.core."""
+        import aetheris.core as core
         assert hasattr(core, "DcConductorSolver")
         assert hasattr(core, "calculate_conductor_distance")
         assert hasattr(core, "resolve_peripheral_telemetry")

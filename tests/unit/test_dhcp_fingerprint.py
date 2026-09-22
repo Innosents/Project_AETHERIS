@@ -7,7 +7,7 @@ Verifies:
   - Clean background thread lifecycle and sub-second teardown
   - JSON symmetry and null terminator / control character sanitization
   - Direct persistence into spatial_ledger.db (inferred_os_profiles & device_registry)
-  - Package exports from graphpath.core.fingerprinting
+  - Package exports from aetheris.core.fingerprinting
 """
 
 import json
@@ -19,7 +19,7 @@ from typing import Optional, List, Tuple
 
 import pytest
 
-from graphpath.core.fingerprinting import (
+from aetheris.core.fingerprinting import (
     DHCPPassiveListener,
     parse_dhcp_packet,
     match_dhcp_prl_fingerprint,
@@ -329,8 +329,8 @@ def test_save_to_ledger(tmp_path):
 
 
 def test_package_exports():
-    """Verifies that all required symbols are cleanly exported from graphpath.core.fingerprinting."""
-    import graphpath.core.fingerprinting as fp
+    """Verifies that all required symbols are cleanly exported from aetheris.core.fingerprinting."""
+    import aetheris.core.fingerprinting as fp
     assert hasattr(fp, "DHCPPassiveListener")
     assert hasattr(fp, "parse_dhcp_packet")
     assert hasattr(fp, "match_dhcp_prl_fingerprint")

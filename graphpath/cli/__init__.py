@@ -1,3 +1,0 @@
-"""
-Project AETHERIS - CLI Package
-"""

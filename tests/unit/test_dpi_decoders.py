@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from graphpath.core.fingerprinting.dpi_decoders import (
+from aetheris.core.fingerprinting.dpi_decoders import (
     UbntDiscoveryDecoder,
     MikrotikMndpDecoder,
     BacnetIpDecoder,
@@ -28,13 +28,13 @@ from graphpath.core.fingerprinting.dpi_decoders import (
     KERNEL_PRIOR_ROUTER_AP_MEAN_US,
     KERNEL_PRIOR_BACNET_CTRL_MEAN_US,
 )
-from graphpath.core.fingerprinting.dpi_normalizers import (
+from aetheris.core.fingerprinting.dpi_normalizers import (
     robust_z_score,
     normalize_stp_path_cost,
     TelemetryAnomalyFilter,
     BayesianTurnaround,
 )
-from graphpath.core.telemetry_ledger import TelemetryLedger
+from aetheris.core.telemetry_ledger import TelemetryLedger
 
 
 def build_ubnt_payload(
@@ -441,29 +441,21 @@ class TestDpiDecoders(unittest.TestCase):
                 tc_flag=True,
             )
 
-            conn = sqlite3.connect(db_path)
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT root_bridge_mac, root_path_cost, designated_bridge_mac, port_id, is_root_bridge, stp_version, tc_flag FROM stp_topology_ledger"
-                )
-                row = cur.fetchone()
-                self.assertIsNotNone(row)
-                self.assertEqual(row[0], "00:1A:2B:3C:4D:5E")
-                self.assertEqual(row[1], 19)
-                self.assertEqual(row[2], "00:1A:2B:3C:4D:99")
-                self.assertEqual(row[3], 0x8004)
-                self.assertEqual(row[4], 0)
-                self.assertEqual(row[5], "RSTP (802.1w)")
-                self.assertEqual(row[6], 1)
-            finally:
-                conn.close()
+            stp_entry = ledger.get_stp_topology(root_bridge_mac="00:1A:2B:3C:4D:5E")
+            self.assertIsNotNone(stp_entry)
+            self.assertEqual(stp_entry["root_bridge_mac"], "00:1A:2B:3C:4D:5E")
+            self.assertEqual(int(stp_entry["root_path_cost"]), 19)
+            self.assertEqual(stp_entry["designated_bridge_mac"], "00:1A:2B:3C:4D:99")
+            self.assertEqual(int(stp_entry["port_id"]), 0x8004)
+            self.assertEqual(int(stp_entry["is_root_bridge"]), 0)
+            self.assertEqual(stp_entry["stp_version"], "RSTP (802.1w)")
+            self.assertEqual(int(stp_entry["tc_flag"]), 1)
 
     def test_sweeper_handle_sniffed_packet_integration(self):
         """Verifies SubnetSweeper._handle_sniffed_packet routes packets into DIP and inferred profiles."""
         from scapy.layers.l2 import Ether
         from scapy.layers.inet import IP, UDP
-        from graphpath.cli.sweep import SubnetSweeper
+        from aetheris.cli.sweep import SubnetSweeper
 
         with tempfile.TemporaryDirectory() as td:
             db_path = str(Path(td) / "test_ledger.db")
@@ -514,14 +506,8 @@ class TestDpiDecoders(unittest.TestCase):
             sweeper._handle_sniffed_packet(scapy_stp)
 
             # Assert STP topology was logged to ledger
-            conn = sqlite3.connect(db_path)
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT COUNT(*) FROM stp_topology_ledger")
-                count = cur.fetchone()[0]
-                self.assertGreaterEqual(count, 1)
-            finally:
-                conn.close()
+            count = sweeper.ledger.get_stp_topology_count()
+            self.assertGreaterEqual(count, 1)
 
     def test_stp_bpdu_sysid_vlan_decomposition(self):
         """Verifies 16-bit Bridge Priority decomposes into Base Priority and SysID Extension / VLAN ID."""
@@ -556,19 +542,11 @@ class TestDpiDecoders(unittest.TestCase):
                 vlan_id=res["vlan_id"],
             )
 
-            conn = sqlite3.connect(db_path)
-            try:
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT root_bridge_mac, vlan_id, root_path_cost FROM stp_topology_ledger"
-                )
-                row = cur.fetchone()
-                self.assertIsNotNone(row)
-                self.assertEqual(row[0], res["root_bridge_mac"])
-                self.assertEqual(row[1], 20)
-                self.assertEqual(row[2], 19)
-            finally:
-                conn.close()
+            entry = ledger.get_stp_topology(root_bridge_mac=res["root_bridge_mac"], vlan_id=res["vlan_id"])
+            self.assertIsNotNone(entry)
+            self.assertEqual(entry["root_bridge_mac"], res["root_bridge_mac"])
+            self.assertEqual(int(entry["vlan_id"]), 20)
+            self.assertEqual(int(entry["root_path_cost"]), 19)
 
     def test_bacnet_mstp_router_snet_prior_separation(self):
         """Verifies SNET presence isolates router prior (35.0us) from microcontroller prior (110.0us)."""
@@ -589,7 +567,7 @@ class TestDpiDecoders(unittest.TestCase):
         # Sweeper integration: ensure sweeper records both priors without collision
         from scapy.layers.l2 import Ether
         from scapy.layers.inet import IP, UDP
-        from graphpath.cli.sweep import SubnetSweeper
+        from aetheris.cli.sweep import SubnetSweeper
 
         with tempfile.TemporaryDirectory() as td:
             db_path = str(Path(td) / "test_bacnet_routed.db")

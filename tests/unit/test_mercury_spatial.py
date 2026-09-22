@@ -12,13 +12,13 @@ import json
 import math
 import pytest
 
-from graphpath.discovery.mercury_spatial_resolver import (
+from aetheris.discovery.mercury_spatial_resolver import (
     MercurySpatialResolver,
     AWG_RESISTANCE_OHMS_PER_FOOT,
     PERIPHERAL_NOMINAL_DRAW_AMPS,
     DEFAULT_AWG_BY_TYPE,
 )
-from graphpath.core.spatial_dc_drop import (
+from aetheris.core.spatial_dc_drop import (
     PeripheralElectricalEnvelope,
     High_Resistance_Anomaly,
     METERS_TO_FEET,

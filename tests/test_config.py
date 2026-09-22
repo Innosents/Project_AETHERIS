@@ -1,5 +1,5 @@
 import unittest
-from graphpath.config import ConfigurationManager
+from aetheris.config import ConfigurationManager
 
 class TestConfigurationManager(unittest.TestCase):
     def test_profile_loading(self):

@@ -13,13 +13,13 @@ import json
 import pytest
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-from graphpath.core.probers.mercury_probe import probe_mercury_panel, MERCURY_STATUS_INQUIRY
-from graphpath.core.probers.onvif_probe import probe_onvif_camera
-from graphpath.core.probers.bacnet_probe import probe_bacnet_device, BACNET_READ_PROPERTY_INQUIRY
-from graphpath.core.probers.modbus_probe import probe_modbus_device, MODBUS_READ_DEVICE_ID
-from graphpath.core.probers.sanitization import sanitize_prober_payload, clean_ascii_string
-from graphpath.core.spatial_bayesian import BayesianEvidenceFusion
-from graphpath.discovery.fingerprint import PassiveStackClassifier
+from aetheris.core.probers.mercury_probe import probe_mercury_panel, MERCURY_STATUS_INQUIRY
+from aetheris.core.probers.onvif_probe import probe_onvif_camera
+from aetheris.core.probers.bacnet_probe import probe_bacnet_device, BACNET_READ_PROPERTY_INQUIRY
+from aetheris.core.probers.modbus_probe import probe_modbus_device, MODBUS_READ_DEVICE_ID
+from aetheris.core.probers.sanitization import sanitize_prober_payload, clean_ascii_string
+from aetheris.core.spatial_bayesian import BayesianEvidenceFusion
+from aetheris.discovery.fingerprint import PassiveStackClassifier
 
 
 # =========================================================================

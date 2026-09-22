@@ -3,7 +3,7 @@ Unit Tests for Spatial Kalman Dynamic Calibration Engine
 """
 
 import unittest
-from graphpath.discovery.spatial_kalman import SpatialKalmanEstimator
+from aetheris.discovery.spatial_kalman import SpatialKalmanEstimator
 
 
 class TestSpatialKalmanEstimator(unittest.TestCase):

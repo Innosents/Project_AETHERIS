@@ -5,7 +5,7 @@ Validates root dashboard serving, /api/telemetry/ingest endpoint, and /api/telem
 
 import pytest
 from fastapi.testclient import TestClient
-from graphpath.web.server import app, latest_telemetry, active_store
+from aetheris.web.server import app, latest_telemetry, active_store
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +88,7 @@ def test_empty_node_id_rejected_422():
 
 def test_stream_telemetry_event_hierarchy_and_streaming():
     from unittest.mock import patch
-    from graphpath.cli.sweep import SubnetSweeper
+    from aetheris.cli.sweep import SubnetSweeper
 
     sweeper = SubnetSweeper(subnet_cidr="192.168.1.0/24", api_url="http://127.0.0.1:8080/api/telemetry/ingest")
 
@@ -209,9 +209,10 @@ def test_topology_endpoint_elements_and_edge_label_formatting():
 
 
 def test_app_ingest_edge_label_formatting():
-    from graphpath.web.app import app as ws_app, active_store as ws_store
+    from aetheris.web.app import app as ws_app, active_store as ws_store
 
-    ws_store._graph.clear()
+    ws_store.nodes.clear()
+    ws_store.edges.clear()
     client = TestClient(ws_app)
 
     # Ingest wired and wireless payloads into web.app
@@ -235,7 +236,7 @@ def test_app_ingest_edge_label_formatting():
     })
     assert r2.status_code == 200
 
-    topo = client.get("/api/topology").json()
+    topo = client.get("/api/graph").json()
     edges = {el["data"]["target"]: el["data"] for el in topo if "source" in el["data"]}
     assert edges["host_wired"]["label"] == "15.0m (95%)"
     assert edges["host_wireless"]["label"] == "~7.5m (80%)"

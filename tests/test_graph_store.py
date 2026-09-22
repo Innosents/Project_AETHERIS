@@ -1,5 +1,5 @@
 import unittest
-from graphpath.topology.graph_store import GraphStore
+from aetheris.topology.graph_store import GraphStore
 
 class TestGraphStore(unittest.TestCase):
     def setUp(self):

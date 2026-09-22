@@ -14,11 +14,13 @@ Verifies:
 """
 
 import json
+from pathlib import Path
 import pytest
 
-from graphpath.core.safety import (
+from aetheris.core.safety import (
     ScopeAuthorizationGuard,
     ScopeViolationException,
+    ScopeGuard,
     get_scope_guard,
     configure_scope_guard,
 )
@@ -28,10 +30,11 @@ class TestScopeAuthorizationGuard:
     """Test suite for ScopeAuthorizationGuard."""
 
     def test_package_exports(self):
-        """Verify core safety components are exported from graphpath.core.safety."""
-        import graphpath.core.safety as safety
+        """Verify core safety components are exported from aetheris.core.safety."""
+        import aetheris.core.safety as safety
         assert hasattr(safety, "ScopeAuthorizationGuard")
         assert hasattr(safety, "ScopeViolationException")
+        assert hasattr(safety, "ScopeGuard")
         assert hasattr(safety, "get_scope_guard")
         assert hasattr(safety, "configure_scope_guard")
 
@@ -230,3 +233,56 @@ class TestScopeAuthorizationGuard:
 
         for k, v in summary.items():
             assert not isinstance(v, bytes), f"Key {k} contains raw bytes: {v}"
+
+
+class TestScopeGuardAstMutation:
+    """Validates AST target path authorization across hexagonal layers."""
+
+    def test_authorized_ast_targets_list(self):
+        guard = ScopeGuard()
+        expected = {
+            Path("aetheris/core/ports"),
+            Path("aetheris/core/parsers"),
+            Path("aetheris/infrastructure/adapters"),
+            Path("aetheris/discovery"),
+        }
+        assert set(guard.authorized_ast_targets) == expected
+        assert set(ScopeGuard.AUTHORIZED_AST_TARGETS) == expected
+
+    def test_authorize_module_mutation_hexagonal_layers(self):
+        # Ports
+        assert ScopeGuard.authorize_module_mutation("aetheris/core/ports/l7_ics_inbound.py") is True
+        assert ScopeGuard.authorize_module_mutation(Path("aetheris/core/ports/l2_span_inbound.py")) is True
+
+        # Parsers
+        assert ScopeGuard.authorize_module_mutation("aetheris/core/parsers/industrial_parser.py") is True
+        assert ScopeGuard.authorize_module_mutation("aetheris/core/parsers/chassis_parser.py") is True
+
+        # Adapters
+        assert ScopeGuard.authorize_module_mutation("aetheris/infrastructure/adapters/modbus_adapter.py") is True
+        assert ScopeGuard.authorize_module_mutation("aetheris/infrastructure/adapters/span_tap_adapter.py") is True
+
+        # Discovery
+        assert ScopeGuard.authorize_module_mutation("aetheris/discovery/advanced_spatial_prober.py") is True
+        assert ScopeGuard.authorize_module_mutation("aetheris/discovery/mirror_engine.py") is True
+
+    def test_authorize_module_mutation_authorized_domains(self):
+        # Existing authorized domains: l2_physical, l3_network, hardware_telemetry, self_healing
+        assert ScopeGuard.authorize_module_mutation("subsystem/l2_physical/test_runner.py") is True
+        assert ScopeGuard.authorize_module_mutation("custom/l3_network/routing.py") is True
+        assert ScopeGuard.authorize_module_mutation("plugins/hardware_telemetry/power.py") is True
+        assert ScopeGuard.authorize_module_mutation("engine/self_healing/agent.py") is True
+
+    def test_authorize_module_mutation_prohibited_targets(self):
+        # Purged core/probers is no longer authorized
+        assert ScopeGuard.authorize_module_mutation("aetheris/core/probers/bacnet_probe.py") is False
+
+        # Non-python extensions rejected
+        assert ScopeGuard.authorize_module_mutation("aetheris/core/parsers/chassis_parser.json") is False
+        assert ScopeGuard.authorize_module_mutation("aetheris/infrastructure/adapters/script.sh") is False
+
+        # Arbitrary and safety-critical paths rejected
+        assert ScopeGuard.authorize_module_mutation("aetheris/core/safety/scope_guard.py") is False
+        assert ScopeGuard.authorize_module_mutation("/etc/shadow.py") is False
+        assert ScopeGuard.authorize_module_mutation("C:/Windows/System32/calc.py") is False
+

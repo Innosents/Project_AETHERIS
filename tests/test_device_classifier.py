@@ -5,7 +5,7 @@ preservation of specific metadata, and unknown hardware fallbacks.
 """
 
 import pytest
-from graphpath.core.device_classifier import DeviceClassifier
+from aetheris.core.device_classifier import DeviceClassifier
 
 
 def test_device_classifier_vmware_oui():

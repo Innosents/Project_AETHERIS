@@ -6,8 +6,8 @@ Validates MCP tools: query_device_prior, get_device_history, get_ledger_stats, a
 import time
 import pytest
 from unittest.mock import patch
-from graphpath.core.telemetry_ledger import TelemetryLedger, ConvergenceRecord
-from graphpath.mcp.spatial_server import (
+from aetheris.core.telemetry_ledger import TelemetryLedger, ConvergenceRecord
+from aetheris.mcp.spatial_server import (
     query_device_prior,
     get_device_history,
     get_ledger_stats,
@@ -39,7 +39,7 @@ def isolated_ledger(tmp_path):
 
 
 def test_mcp_query_device_prior(isolated_ledger):
-    with patch("graphpath.mcp.spatial_server.ledger", isolated_ledger):
+    with patch("aetheris.mcp.spatial_server.ledger", isolated_ledger):
         # Learned prior
         res = query_device_prior(oui="00:50:56", archetype="LINUX_SERVER")
         assert res["status"] == "converged"
@@ -54,7 +54,7 @@ def test_mcp_query_device_prior(isolated_ledger):
 
 
 def test_mcp_get_device_history(isolated_ledger):
-    with patch("graphpath.mcp.spatial_server.ledger", isolated_ledger):
+    with patch("aetheris.mcp.spatial_server.ledger", isolated_ledger):
         history_mac = get_device_history("00:50:56:AB:CD:00")
         assert len(history_mac) == 1
         assert history_mac[0]["ip"] == "10.0.0.10"
@@ -69,7 +69,7 @@ def test_mcp_get_device_history(isolated_ledger):
 
 
 def test_mcp_get_ledger_stats(isolated_ledger):
-    with patch("graphpath.mcp.spatial_server.ledger", isolated_ledger):
+    with patch("aetheris.mcp.spatial_server.ledger", isolated_ledger):
         stats = get_ledger_stats()
         assert stats["total_records"] == 3
         assert stats["unique_macs"] == 3
@@ -78,7 +78,7 @@ def test_mcp_get_ledger_stats(isolated_ledger):
 
 
 def test_mcp_list_unique_endpoints(isolated_ledger):
-    with patch("graphpath.mcp.spatial_server.ledger", isolated_ledger):
+    with patch("aetheris.mcp.spatial_server.ledger", isolated_ledger):
         endpoints = list_unique_endpoints()
         assert len(endpoints) == 3
         macs = {e["mac"] for e in endpoints}

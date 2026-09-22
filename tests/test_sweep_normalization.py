@@ -5,8 +5,8 @@ are bounded by SpatialNormalizationEngine and do not explode to 1,000+ km.
 """
 
 from unittest.mock import patch, MagicMock
-from graphpath.cli.sweep import SubnetSweeper
-from graphpath.core.spatial_normalizer import SpatialNormalizationEngine, SpatialEvidenceBound
+from aetheris.cli.sweep import SubnetSweeper
+from aetheris.core.spatial_normalizer import SpatialNormalizationEngine, SpatialEvidenceBound
 
 
 def test_linux_high_jitter_bounded_by_normalizer():
@@ -51,7 +51,7 @@ def test_subnet_sweeper_integration_with_normalizer():
     sweeper.engine.packet_tap = mock_tap
 
     # Mock srp1 port scan to identify Linux host
-    with patch("graphpath.cli.sweep.srp1") as mock_srp1:
+    with patch("aetheris.cli.sweep.srp1") as mock_srp1:
         mock_resp = MagicMock()
         mock_resp.haslayer.return_value = True
         mock_resp.__getitem__.side_effect = lambda layer: MagicMock(ttl=64, flags=0x12)
