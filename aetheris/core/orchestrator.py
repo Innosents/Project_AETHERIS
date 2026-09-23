@@ -7,7 +7,7 @@ import asyncio
 import ipaddress
 import json
 import logging
-from typing import Dict, Any, List, NoReturn
+from typing import Dict, Any, List, NoReturn, Optional, Tuple
 
 
 from aetheris.infrastructure.adapters.memurai_bus import MemuraiEventBus
@@ -19,6 +19,8 @@ from aetheris.core.probers.l2_physical.stp_intelligence import SpanningTreeTelem
 from aetheris.core.probers.l3_network.multicast_identity import MulticastIdentityProbe
 from aetheris.core.probers.l3_network.ttl_interrogator import ActiveTTLInterrogator
 from aetheris.core.probers.sanitization import sanitize_prober_payload
+from aetheris.core.anchor_resolver import AnchorSubgraphResolver
+from aetheris.core.telemetry_ledger import TelemetryLedger
 
 logger = logging.getLogger("aetheris.orchestrator")
 
@@ -27,11 +29,45 @@ class AetherisOrchestrator:
     Central execution matrix for the AETHERIS NDR framework.
     Fuses external telemetry adapters with the localized Llama 3.1 SovereignAgent.
     """
-    def __init__(self, interface: str):
+    def __init__(self, interface: str, ledger: Optional[TelemetryLedger] = None):
         self.bus = MemuraiEventBus()
         self.agent = SovereignAgent()
         self.chassis_probe = ChassisIntelligenceProbe(interface=interface, event_bus=self.bus)
         self.intelligence_queue = "aetheris:telemetry:chassis_intelligence"
+        self.ledger = ledger or TelemetryLedger()
+        self.anchor_resolver = AnchorSubgraphResolver(self.ledger)
+
+    def evaluate_topological_context(
+        self,
+        subnet: str,
+        default_gw_mac: str = "",
+        gw_ip: str = "",
+        l2_chassis_beacons: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[str, float, List[str], Optional[Dict[str, Any]]]:
+        """
+        Evaluates structural L2/L3 backbone candidates using Anchor Subgraph Hashing (ASH).
+        Hydrates topological priors on match or registers a novel cluster.
+        """
+        candidates = []
+        if default_gw_mac:
+            candidates.append({"mac": default_gw_mac, "type": "GATEWAY", "ip": gw_ip})
+        for b in (l2_chassis_beacons or []):
+            if b.get("chassis_id"):
+                candidates.append({"mac": b["chassis_id"], "type": "STP_ROOT"})
+
+        resolver = self.anchor_resolver
+        cluster_id, conf, matched = resolver.evaluate_environment(candidates, cidr_hint=subnet)
+        if cluster_id:
+            priors = self.ledger.fetch_cluster_state(cluster_id)
+        else:
+            cluster_id = resolver.register_new_cluster(
+                label=f"Cluster-{subnet}",
+                environment_cidr=subnet,
+                anchors=candidates
+            )
+            priors = self.ledger.fetch_cluster_state(cluster_id)
+
+        return cluster_id, conf, matched, priors
 
     async def _consume_chassis_intelligence(self) -> NoReturn:
         """
@@ -137,6 +173,46 @@ async def execute_fused_spatial_sweep(
 
     l3_hop_data = l3_res.get("ttl_matrix", {}) if isinstance(l3_res, dict) else {}
 
+    # Candidate extraction for ASH topological evaluation
+    candidates = []
+    default_gw_mac = ""
+    gw_ip = ""
+    if isinstance(l3_hop_data, dict):
+        for ip, hop_info in l3_hop_data.items():
+            if isinstance(hop_info, dict) and hop_info.get("is_gateway"):
+                default_gw_mac = hop_info.get("mac", "")
+                gw_ip = ip
+                break
+
+    if default_gw_mac:
+        candidates.append({"mac": default_gw_mac, "type": "GATEWAY", "ip": gw_ip})
+
+    chassis_matrix = l2_res.get("chassis_intelligence", {})
+    if isinstance(chassis_matrix, dict):
+        for mac, c_data in chassis_matrix.items():
+            if isinstance(c_data, dict):
+                chassis_id = c_data.get("chassis_id") or mac
+                candidates.append({"mac": chassis_id, "type": "LLDP_CHASSIS"})
+
+    stp_res = l2_res.get("spanning_tree_intelligence", {})
+    if isinstance(stp_res, dict):
+        root_mac = stp_res.get("root_bridge_mac") or stp_res.get("root_mac")
+        if root_mac:
+            candidates.append({"mac": root_mac, "type": "STP_ROOT"})
+
+    ledger = TelemetryLedger()
+    resolver = AnchorSubgraphResolver(ledger)
+    cluster_id, conf, matched = resolver.evaluate_environment(candidates, cidr_hint=target_subnet)
+    if cluster_id:
+        priors = ledger.fetch_cluster_state(cluster_id)
+    else:
+        cluster_id = resolver.register_new_cluster(
+            label=f"Cluster-{target_subnet}",
+            environment_cidr=target_subnet,
+            anchors=candidates
+        )
+        priors = ledger.fetch_cluster_state(cluster_id)
+
     result = {
         "orchestration_state": "SPATIAL_FUSION_COMPLETE",
         "target_subnet": target_subnet,
@@ -144,5 +220,11 @@ async def execute_fused_spatial_sweep(
         "spanning_tree_intelligence": l2_res.get("spanning_tree_intelligence", {}),
         "multicast_identity": l2_res.get("multicast_identity", {}),
         "l3_hop_intelligence": l3_hop_data,
+        "topological_memory": {
+            "cluster_id": cluster_id,
+            "confidence": conf,
+            "matched_anchors": matched,
+            "priors": priors,
+        },
     }
     return sanitize_prober_payload(result)

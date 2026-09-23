@@ -20,8 +20,49 @@ from aetheris.core.ports.ledger_port import (
     HydrationStoreResult,
     _MappingCompatibleModel,
 )
+from aetheris.core.telemetry_ledger import TelemetryLedger
 
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+
+NETWORK_CLUSTERS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS network_clusters (
+    cluster_id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    environment_cidr TEXT NOT NULL,
+    first_indexed REAL NOT NULL,
+    last_recalled REAL NOT NULL,
+    recall_count INTEGER DEFAULT 1,
+    topology_hash TEXT NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+"""
+
+CLUSTER_ANCHORS_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS cluster_anchors (
+    anchor_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cluster_id TEXT NOT NULL,
+    anchor_mac TEXT NOT NULL,
+    anchor_type TEXT NOT NULL,
+    ip_hint TEXT,
+    confidence REAL DEFAULT 1.0,
+    FOREIGN KEY(cluster_id) REFERENCES network_clusters(cluster_id) ON DELETE CASCADE
+);
+"""
+
+CLUSTER_INDEXES_DDL = """
+CREATE INDEX IF NOT EXISTS idx_cluster_anchors_mac ON cluster_anchors(anchor_mac);
+CREATE INDEX IF NOT EXISTS idx_cluster_anchors_cluster ON cluster_anchors(cluster_id);
+"""
+
+
+def migrate_cluster_schema(conn: Any) -> None:
+    """Executes DDL migration on SQLite connection to establish topological cluster tracking."""
+    conn.execute(NETWORK_CLUSTERS_TABLE_DDL)
+    conn.execute(CLUSTER_ANCHORS_TABLE_DDL)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_anchors_mac ON cluster_anchors(anchor_mac)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_anchors_cluster ON cluster_anchors(cluster_id)")
+    if hasattr(conn, "commit"):
+        conn.commit()
 
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -287,6 +328,11 @@ class AetherisLedger(LedgerPort):
 
 __all__ = [
     "AetherisLedger",
+    "TelemetryLedger",
+    "NETWORK_CLUSTERS_TABLE_DDL",
+    "CLUSTER_ANCHORS_TABLE_DDL",
+    "CLUSTER_INDEXES_DDL",
+    "migrate_cluster_schema",
     "LedgerPort",
     "NodeTelemetryPayload",
     "EvictionSummary",

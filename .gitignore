@@ -79,3 +79,8 @@ desktop.ini
 *.bin
 *.onnx
 aetheris/models/
+
+device_identity_profiles.json
+.aetheris/
+.venv_wsl/
+.patch_archive/

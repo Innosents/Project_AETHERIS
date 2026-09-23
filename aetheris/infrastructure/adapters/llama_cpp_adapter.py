@@ -2,7 +2,17 @@ import asyncio
 import json
 import logging
 from typing import Optional, Any
-from llama_cpp import Llama, LlamaGrammar
+try:
+    from llama_cpp import Llama, LlamaGrammar
+except ImportError:
+    class _LlamaFallback:
+        pass
+    class _LlamaGrammarFallback:
+        @classmethod
+        def from_string(cls, *args, **kwargs):
+            return cls()
+    Llama = _LlamaFallback  # type: ignore
+    LlamaGrammar = _LlamaGrammarFallback  # type: ignore
 from aetheris.core.ports.agent_decision import ActionTensor, InferenceEnginePort
 
 logger = logging.getLogger("aetheris.adapters.llama_cpp")

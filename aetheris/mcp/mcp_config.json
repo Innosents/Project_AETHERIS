@@ -1,32 +1,24 @@
 {
   "mcpServers": {
-    "aetheris-blackboard": {
-      "command": "python",
-      "args": ["-m", "aetheris.mcp.servers.blackboard"],
-      "env": {
-        "AETHERIS_DB_PATH": "E:/Project_AETHERIS/spatial_ledger.db"
-      }
-    },
     "aetheris-codeintel": {
       "command": "python",
       "args": ["-m", "aetheris.mcp.servers.codeintel"],
-      "env": {
-        "PROJECT_ROOT": "E:/Project_AETHERIS"
-      }
+      "cwd": "E:\\Project_AETHERIS"
     },
     "aetheris-testguard": {
       "command": "python",
       "args": ["-m", "aetheris.mcp.servers.testguard"],
-      "env": {
-        "PYTHONPATH": "E:/Project_AETHERIS"
-      }
+      "cwd": "E:\\Project_AETHERIS"
+    },
+    "aetheris-blackboard": {
+      "command": "python",
+      "args": ["-m", "aetheris.mcp.servers.blackboard"],
+      "cwd": "E:\\Project_AETHERIS"
     },
     "aetheris-hwot": {
       "command": "python",
       "args": ["-m", "aetheris.mcp.servers.hwot"],
-      "env": {
-        "BIND_ADDRESS": "127.0.0.1"
-      }
+      "cwd": "E:\\Project_AETHERIS"
     }
   }
 }

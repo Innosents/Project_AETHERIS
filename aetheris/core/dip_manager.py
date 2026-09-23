@@ -67,7 +67,12 @@ class DeviceIdentityProfileManager(DeviceIdentityProfilePort):
         self,
         storage: Optional[Union[DipStoragePort, str, Path]] = None,
         storage_path: Optional[str] = None,
+        ledger: Optional[Any] = None,
     ):
+        if getattr(self, "_initialized", False):
+            if ledger is not None:
+                self.ledger = ledger
+            return
         target = storage if storage is not None else storage_path
         if isinstance(target, DipStoragePort):
             self.storage = target
@@ -78,7 +83,15 @@ class DeviceIdentityProfileManager(DeviceIdentityProfilePort):
         self.storage_path = self.storage.get_storage_target()
         self.path = Path(self.storage_path)
         self.profiles: Dict[str, DeviceIdentityProfile] = {}
+        if ledger is not None:
+            self.ledger = ledger
+        elif hasattr(self.storage, "ledger"):
+            self.ledger = getattr(self.storage, "ledger")
+        else:
+            from aetheris.core.telemetry_ledger import TelemetryLedger
+            self.ledger = TelemetryLedger()
         self._load_and_migrate()
+        self._initialized = True
 
     def _clean_mac(self, mac_raw: str) -> str:
         if not mac_raw:
@@ -187,6 +200,14 @@ class DeviceIdentityProfileManager(DeviceIdentityProfilePort):
         """Persists sanitized DIP profiles to storage safely."""
         self._save()
 
+    def get_profile_by_mac(self, mac: str) -> Optional[Dict[str, Any]]:
+        """Interrogates SQLite telemetry ledger for verified historic observations."""
+        if hasattr(self, "ledger") and self.ledger is not None:
+            record = self.ledger.get_verified_identity(mac)
+            if record:
+                return record
+        return None
+
     def lookup(self, mac: str) -> Optional[DeviceIdentityProfile]:
         clean_mac = self._clean_mac(mac)
         if not clean_mac or clean_mac in ("00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF"):
@@ -195,6 +216,20 @@ class DeviceIdentityProfileManager(DeviceIdentityProfilePort):
             prof = self.profiles.get(clean_mac)
             if prof is not None:
                 return prof if isinstance(prof, DeviceIdentityProfile) else DeviceIdentityProfile.model_validate(prof)
+            # Fallback to ledger verified historic observations
+            rec = self.get_profile_by_mac(clean_mac)
+            if rec:
+                validated = DeviceIdentityProfile.model_validate({
+                    "mac": clean_mac,
+                    "ip": rec.get("ip", ""),
+                    "vendor": rec.get("vendor", "Unknown"),
+                    "model": rec.get("model", "Generic Endpoint"),
+                    "dev_type": rec.get("dev_type", rec.get("archetype", "unknown")),
+                    "type": rec.get("dev_type", rec.get("archetype", "unknown")),
+                    "confidence": float(rec.get("confidence", rec.get("confidence_pct", 80.0) / 100.0 if "confidence_pct" in rec else 0.8)),
+                })
+                self.profiles[clean_mac] = validated
+                return validated
             return None
 
     lookup_by_mac = lookup

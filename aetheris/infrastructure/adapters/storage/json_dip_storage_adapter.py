@@ -35,18 +35,12 @@ class JsonDipStorageAdapter(DipStoragePort):
 
     def load_profiles(self) -> Dict[str, Dict[str, Any]]:
         """
-        Thread-safe load of JSON profiles from disk.
-        Returns empty dictionary if target does not exist or fails parsing.
+        Deprecated static JSON adapter reader.
+        Disk reads to device_identity_profiles.json are decommissioned in favor of
+        dynamic SQLite ledger and topological ASH memory retrieval.
+        Returns empty dictionary.
         """
-        with self._lock:
-            if not self.path.exists():
-                return {}
-            try:
-                with open(self.path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data if isinstance(data, dict) else {}
-            except Exception:
-                return {}
+        return {}
 
     def save_profiles(self, profiles: Dict[str, Dict[str, Any]]) -> bool:
         """

@@ -191,6 +191,12 @@ class TelemetryLedgerPort(Protocol):
     def evict_older_than(self, max_age_seconds: float = 86400.0) -> int:
         ...
 
+    def get_verified_identity(self, mac: str) -> Optional[Dict[str, Any]]:
+        ...
+
+    def fetch_cluster_state(self, cluster_id: str) -> Optional[Dict[str, Any]]:
+        ...
+
 
 __all__ = [
     "_MappingCompatibleModel",

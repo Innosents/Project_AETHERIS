@@ -173,6 +173,31 @@ class TelemetryLedger(TelemetryLedgerPort):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_stp_root_mac ON stp_topology_ledger(root_bridge_mac)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_stp_bridge_mac ON stp_topology_ledger(designated_bridge_mac)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_stp_root_vlan ON stp_topology_ledger(root_bridge_mac, vlan_id)")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS network_clusters (
+                    cluster_id TEXT PRIMARY KEY,
+                    label TEXT NOT NULL,
+                    environment_cidr TEXT NOT NULL,
+                    first_indexed REAL NOT NULL,
+                    last_recalled REAL NOT NULL,
+                    recall_count INTEGER DEFAULT 1,
+                    topology_hash TEXT NOT NULL,
+                    metadata_json TEXT DEFAULT '{}'
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cluster_anchors (
+                    anchor_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cluster_id TEXT NOT NULL,
+                    anchor_mac TEXT NOT NULL,
+                    anchor_type TEXT NOT NULL,
+                    ip_hint TEXT,
+                    confidence REAL DEFAULT 1.0,
+                    FOREIGN KEY(cluster_id) REFERENCES network_clusters(cluster_id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_anchors_mac ON cluster_anchors(anchor_mac)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_cluster_anchors_cluster ON cluster_anchors(cluster_id)")
             conn.commit()
 
     def record_calibration(
@@ -561,3 +586,68 @@ class TelemetryLedger(TelemetryLedgerPort):
             deleted_count = cursor.rowcount
             conn.commit()
         return deleted_count
+
+    def get_verified_identity(self, mac: str) -> Optional[Dict[str, Any]]:
+        """Retrieves verified historic telemetry identity for a given MAC address."""
+        clean_mac = mac.upper().strip()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM convergence_ledger 
+                WHERE UPPER(mac) = ? 
+                ORDER BY timestamp DESC LIMIT 1
+                """,
+                (clean_mac,)
+            )
+            row = cursor.fetchone()
+            if row:
+                res = dict(row)
+                if "archetype" in res and not res.get("dev_type"):
+                    res["dev_type"] = res["archetype"]
+                    res["type"] = res["archetype"]
+                return res
+
+            cursor = conn.execute(
+                """
+                SELECT * FROM cluster_anchors 
+                WHERE UPPER(anchor_mac) = ? 
+                ORDER BY anchor_id DESC LIMIT 1
+                """,
+                (clean_mac,)
+            )
+            row = cursor.fetchone()
+            if row:
+                res = dict(row)
+                return {
+                    "mac": res["anchor_mac"],
+                    "ip": res.get("ip_hint", ""),
+                    "dev_type": res.get("anchor_type", "GATEWAY"),
+                    "type": res.get("anchor_type", "GATEWAY"),
+                    "confidence": float(res.get("confidence", 1.0)),
+                    "cluster_id": res.get("cluster_id")
+                }
+            return None
+
+    def fetch_cluster_state(self, cluster_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieves full topological cluster state including registered anchors."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM network_clusters WHERE cluster_id = ?",
+                (cluster_id,)
+            )
+            cluster_row = cursor.fetchone()
+            if not cluster_row:
+                return None
+            cluster_data = dict(cluster_row)
+            if "metadata_json" in cluster_data and isinstance(cluster_data["metadata_json"], str):
+                try:
+                    cluster_data["metadata"] = json.loads(cluster_data["metadata_json"])
+                except Exception:
+                    cluster_data["metadata"] = {}
+
+            cursor = conn.execute(
+                "SELECT * FROM cluster_anchors WHERE cluster_id = ?",
+                (cluster_id,)
+            )
+            cluster_data["anchors"] = [dict(r) for r in cursor.fetchall()]
+            return cluster_data
