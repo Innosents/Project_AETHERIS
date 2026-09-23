@@ -27,3 +27,11 @@
 - [x] **Storage Dependency Injection**: `DeviceIdentityProfileManager` reliably switches target adapters across shared test contexts.
 - [x] **CI Parity**: GitHub Actions pipeline matrix updated to include full test harness dependencies.
 - [x] **Zero Regressions**: 100% test pass rate preserved across all unit and integration test targets.
+
+## 5. CI Pipeline Certification & Decoupling Attestation
+- **Attestation Run ID**: 35922885600 (AETHERIS Hexagonal Core CI)
+- **Status**: PASSED (100% Green on Ubuntu-latest / Python 3.11)
+- **Resolved Architectural Anomalies**:
+  1. Severed root-level infrastructure leak in etheris/core/security_auditor.py (lazy-guarded EdgeSecurityAuditor to ensure strict hexagonal isolation).
+  2. Stripped UTF-8 BOM headers across 30+ files to guarantee CPython AST parser stability across non-Windows runtimes.
+  3. Integrated missing core dependencies (scapy, pysnmp, edis, cryptography, pyasn1, pysmi, httpx) into CI runner profile.
