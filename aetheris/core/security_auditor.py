@@ -367,7 +367,7 @@ class SecurityAuditor(SecurityAuditorPort):
             )
             hardening_steps.append("Install 1N4004/1N5408 reverse-biased clamping flyback diode across inductive strike terminals and inspect locking hardware for mechanical tamper or relay buzzing.")
 
-        # 7d. Access Controller Spatial Impersonation (TCP flight time > 2000µs)
+        # 7d. Access Controller Spatial Impersonation (TCP flight time > 2000Âµs)
         tcp_flight_us = (
             device_data.get("tcp_flight_time_us")
             or device_data.get("tcp_flight_us")
@@ -444,6 +444,9 @@ class SecurityAuditor(SecurityAuditorPort):
         )
 
 
-from aetheris.infrastructure.edge_auditor import EdgeSecurityAuditor
-__all__ = ["SecurityAuditor", "EdgeSecurityAuditor", "FACTORY_POSTURE_PROFILES"]
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from aetheris.infrastructure.edge_auditor import EdgeSecurityAuditor
+
+__all__ = ["SecurityAuditor", "FACTORY_POSTURE_PROFILES"]
 
