@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 from typing import Set
 
@@ -9,6 +9,17 @@ def compile_repository_snapshot(target_directory: str = ".", output_matrix: str 
     """
     # Absolute isolation of hypervisor dependencies, binary staging trees, and LLM tensors
     exclusion_matrices: Set[str] = {
+        "venv",
+        ".venv",
+        ".venv_wsl",
+        ".pytest_cache",
+        ".hypothesis",
+        ".git",
+        ".patch_archive",
+        "build",
+        "dist",
+        "models",
+        "__pycache__",
         ".venv",
         ".venv_wsl", 
         "build", 
@@ -27,7 +38,7 @@ def compile_repository_snapshot(target_directory: str = ".", output_matrix: str 
             
             for file_node in sorted(files):
                 # Prevent recursive self-indexing
-                if file_node == output_matrix:
+                if file_node == output_matrix or file_node.endswith((".db", ".db-wal", ".db-shm", ".pyc", ".pyd", ".exe", ".dll", ".dat")):
                     continue
                     
                 file_path = Path(root) / file_node
