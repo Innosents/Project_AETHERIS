@@ -1,4 +1,4 @@
-﻿name: AETHERIS Hexagonal Core CI
+name: AETHERIS Hexagonal Core CI
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
         print('Core Ports AST Boundary Check: Clean.')"
 
     - name: Run Core Domain Unit Tests
+      env:
+        PYTHONPATH: .
       run: |
-        python -m pytest tests/unit/test_spatial_solver.py tests/unit/test_state_machine.py tests/unit/test_telemetry_ledger.py tests/unit/test_topologies_projection.py tests/unit/test_spatial_bayesian.py -v
-
-
+        python -m pytest tests/unit/test_spatial_solver.py tests/unit/test_state_machine.py tests/unit/test_telemetry_ledger.py tests/unit/test_topologies_projection.py tests/unit/test_spatial_bayesian.py -v --tb=short
