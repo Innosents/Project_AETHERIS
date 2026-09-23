@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit Test Suite for Anchor Subgraph Resolver & Topological Memory Transition.
 Validates:
 1. Deterministic canonical SHA-256 fingerprinting for Anchor Subgraph Hashing (ASH).
@@ -229,14 +229,14 @@ def test_telemetry_ledger_verified_identity(ledger):
     assert anchor_ident["dev_type"] == "GATEWAY"
 
 
-def test_json_dip_storage_adapter_deprecation(tmp_path):
-    """Asserts JsonDipStorageAdapter load_profiles does not read disk and returns empty dict."""
+def test_json_dip_storage_adapter_persistence(tmp_path):
+    """Asserts JsonDipStorageAdapter load_profiles reads serialized profiles from disk."""
     dummy_file = tmp_path / "device_identity_profiles.json"
     dummy_file.write_text('{"AA:BB:CC:DD:EE:FF": {"mac": "AA:BB:CC:DD:EE:FF"}}', encoding="utf-8")
 
     adapter = JsonDipStorageAdapter(storage_path=str(dummy_file))
     loaded = adapter.load_profiles()
-    assert loaded == {}
+    assert "AA:BB:CC:DD:EE:FF" in loaded
 
 
 def test_dip_manager_get_profile_by_mac_fallback(ledger):
@@ -308,3 +308,4 @@ def test_orchestrator_evaluate_topological_context(ledger, monkeypatch):
     assert matched_id == cluster_id
     assert conf_match >= 0.90
     assert len(matched_macs) == 3
+

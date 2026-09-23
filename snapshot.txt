@@ -3,6 +3,7 @@
 README.md: 14 LOC
 aetheris.spec: 44 LOC
 build_executable.py: 76 LOC
+device_identity_profiles.json: 28 LOC
 dockerfile: 20 LOC
 main.py: 7 LOC
 pytest.ini: 4 LOC
@@ -33,7 +34,7 @@ aetheris\core\anchor_resolver.py: 151 LOC
 aetheris\core\compat_probers.py: 33 LOC
 aetheris\core\device_classifier.py: 219 LOC
 aetheris\core\device_classifier_engine.py: 338 LOC
-aetheris\core\dip_manager.py: 699 LOC
+aetheris\core\dip_manager.py: 709 LOC
 aetheris\core\discovery_engine.py: 211 LOC
 aetheris\core\high_density_classifier.py: 19 LOC
 aetheris\core\interfaces.py: 49 LOC
@@ -189,7 +190,7 @@ aetheris\infrastructure\test_bus.py: 27 LOC
 aetheris\infrastructure\adapters\NOTES.md: 1154 LOC
 aetheris\infrastructure\adapters\__init__.py: 33 LOC
 aetheris\infrastructure\adapters\active_sweep.py: 45 LOC
-aetheris\infrastructure\adapters\chassis_probe.py: 49 LOC
+aetheris\infrastructure\adapters\chassis_probe.py: 52 LOC
 aetheris\infrastructure\adapters\cldap_adapter.py: 45 LOC
 aetheris\infrastructure\adapters\dhcp_capture.py: 76 LOC
 aetheris\infrastructure\adapters\erspan_chassis_adapter.py: 95 LOC
@@ -218,7 +219,7 @@ aetheris\infrastructure\adapters\mcp\__init__.py: 5 LOC
 aetheris\infrastructure\adapters\mcp\registry.py: 34 LOC
 aetheris\infrastructure\adapters\mcp\stdio_adapter.py: 99 LOC
 aetheris\infrastructure\adapters\storage\__init__.py: 5 LOC
-aetheris\infrastructure\adapters\storage\json_dip_storage_adapter.py: 68 LOC
+aetheris\infrastructure\adapters\storage\json_dip_storage_adapter.py: 72 LOC
 aetheris\infrastructure\adapters\storage\oui_xml_adapter.py: 38 LOC
 aetheris\infrastructure\adapters\system\filesystem_path_adapter.py: 85 LOC
 aetheris\infrastructure\probers\__init__.py: 0 LOC
@@ -228,12 +229,13 @@ aetheris\mcp\blackboard.py: 234 LOC
 aetheris\mcp\codeintel.py: 241 LOC
 aetheris\mcp\hwot.py: 209 LOC
 aetheris\mcp\mcp_config.json: 24 LOC
-aetheris\mcp\spatial_server.py: 1175 LOC
+aetheris\mcp\spatial.py: 0 LOC
 aetheris\mcp\testguard.py: 215 LOC
 aetheris\mcp\servers\__init__.py: 1 LOC
 aetheris\mcp\servers\blackboard.py: 61 LOC
 aetheris\mcp\servers\codeintel.py: 56 LOC
 aetheris\mcp\servers\hwot.py: 48 LOC
+aetheris\mcp\servers\spatial.py: 0 LOC
 aetheris\mcp\servers\testguard.py: 52 LOC
 aetheris\orchestrator\__init__.py: 0 LOC
 aetheris\orchestrator\graph_store.py: 4 LOC
@@ -330,6 +332,7 @@ aetheris\receipts\Phase_88_Receipt.md: 34 LOC
 aetheris\receipts\Phase_89_Receipt.md: 33 LOC
 aetheris\receipts\Phase_90_Receipt.md: 32 LOC
 aetheris\receipts\Phase_91_Receipt.md: 33 LOC
+aetheris\receipts\Phase_93_Receipt.md: 0 LOC
 aetheris\storage\ledger.py: 343 LOC
 aetheris\topology\__init__.py: 7 LOC
 aetheris\topology\graph_store.py: 190 LOC
@@ -379,9 +382,9 @@ tests\test_spatial_normalizer.py: 137 LOC
 tests\test_sweep_normalization.py: 73 LOC
 tests\fuzz\__init__.py: 1 LOC
 tests\fuzz\test_dpi_fuzz.py: 589 LOC
+tests\integration\test_chassis_integration.py: 49 LOC
 tests\integration\test_e2e_pipeline.py: 156 LOC
 tests\legacy_quarantine\test_anchor_resolution.py: 102 LOC
-tests\legacy_quarantine\test_chassis.py: 43 LOC
 tests\legacy_quarantine\test_classifier_repair.py: 168 LOC
 tests\legacy_quarantine\test_device_classifier_ui.py: 127 LOC
 tests\legacy_quarantine\test_discovery_engine_port.py: 123 LOC
@@ -405,7 +408,7 @@ tests\unit\test_adaptive_orchestrator.py: 190 LOC
 tests\unit\test_advanced_spatial_prober.py: 124 LOC
 tests\unit\test_agent_decision.py: 145 LOC
 tests\unit\test_anchor_guard.py: 143 LOC
-tests\unit\test_anchor_subgraph_resolver.py: 310 LOC
+tests\unit\test_anchor_subgraph_resolver.py: 311 LOC
 tests\unit\test_arp_scan.py: 70 LOC
 tests\unit\test_banner_grab.py: 61 LOC
 tests\unit\test_bayesian_anchors.py: 75 LOC
@@ -462,7 +465,7 @@ tests\unit\test_passive_l2_listener.py: 94 LOC
 tests\unit\test_pcap_capture_adapter.py: 196 LOC
 tests\unit\test_port_scan.py: 92 LOC
 tests\unit\test_probers.py: 516 LOC
-tests\unit\test_probers_enrichment.py: 223 LOC
+tests\unit\test_probers_enrichment.py: 225 LOC
 tests\unit\test_probing_harness.py: 27 LOC
 tests\unit\test_raw_packet_tap.py: 69 LOC
 tests\unit\test_scope_guard.py: 288 LOC
@@ -473,6 +476,7 @@ tests\unit\test_span_tap_adapter.py: 197 LOC
 tests\unit\test_spatial_bayesian.py: 82 LOC
 tests\unit\test_spatial_calibration.py: 42 LOC
 tests\unit\test_spatial_dc_drop.py: 368 LOC
+tests\unit\test_spatial_engine.py: 0 LOC
 tests\unit\test_spatial_kalman.py: 98 LOC
 tests\unit\test_spatial_matrix.py: 313 LOC
 tests\unit\test_spatial_mcmc.py: 114 LOC

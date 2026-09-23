@@ -1,4 +1,4 @@
-"""
+﻿"""
 Project AETHERIS - Device Identity Profile (DIP) Manager.
 Dynamic identity caching, learning, and environmental cross-referencing engine.
 Decoupled from direct disk serialization via DipStoragePort.
@@ -70,6 +70,15 @@ class DeviceIdentityProfileManager(DeviceIdentityProfilePort):
         ledger: Optional[Any] = None,
     ):
         if getattr(self, "_initialized", False):
+            if storage is not None:
+                target = storage
+                if isinstance(target, DipStoragePort):
+                    self.storage = target
+                else:
+                    from aetheris.infrastructure.adapters.storage.json_dip_storage_adapter import JsonDipStorageAdapter
+                    self.storage = JsonDipStorageAdapter(target)
+                self.storage_path = self.storage.get_storage_target()
+                self.path = Path(self.storage_path)
             if ledger is not None:
                 self.ledger = ledger
             return
@@ -697,3 +706,4 @@ __all__ = [
     "ProfileLearningPayload",
     "ProfileMatchResult",
 ]
+

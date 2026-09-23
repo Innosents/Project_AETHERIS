@@ -1,10 +1,12 @@
-"""
+﻿"""
 Project AETHERIS - Chassis Intelligence Adapter & Compatibility Bridge.
 Connects orchestrator delegates with ErspanChassisAdapter and maintains chassis_matrix state.
 """
 
-from typing import Optional, Dict, Any
-from aetheris.infrastructure.adapters.erspan_chassis_adapter import ErspanChassisAdapter
+from typing import Optional, Dict, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aetheris.infrastructure.adapters.erspan_chassis_adapter import ErspanChassisAdapter
 
 
 class ChassisIntelligenceProbe:
@@ -24,6 +26,8 @@ class ChassisIntelligenceProbe:
         self.bus = event_bus
         self.chassis_matrix: Dict[str, Any] = {}
         if self.bus is not None:
+            from aetheris.infrastructure.adapters.erspan_chassis_adapter import ErspanChassisAdapter
+
             span_iface = self.telemetry_context.get("span_interface", interface or "eth0")
             self.adapter: Optional[ErspanChassisAdapter] = ErspanChassisAdapter(
                 interface=span_iface,
@@ -46,4 +50,3 @@ class ChassisIntelligenceProbe:
         """Resets the internal chassis matrix."""
         self.chassis_matrix.clear()
         return True
-

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests validating Phase 1, Phase 2, and Phase 3 prober remediation:
 - SpanCaptureEngine multiplexing and delegation
 - Sanitization of NaN, Inf, and dataclasses
@@ -217,7 +217,9 @@ async def test_fused_spatial_orchestrator():
             "spanning_tree_intelligence",
             "multicast_identity",
             "l3_hop_intelligence",
+            "topological_memory",
         }
         assert json.loads(json.dumps(sweep)) == sweep
+
 
 

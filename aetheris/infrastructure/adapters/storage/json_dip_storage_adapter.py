@@ -1,4 +1,4 @@
-"""
+﻿"""
 Project AETHERIS - JSON Device Identity Profile Storage Adapter.
 Implements DipStoragePort with thread-safe atomic swaps and file locking.
 """
@@ -22,7 +22,6 @@ class JsonDipStorageAdapter(DipStoragePort):
         if storage_path:
             self.path = Path(storage_path)
         else:
-            # Default resolution: project root or module parent
             default_path = Path(__file__).resolve().parents[4] / "device_identity_profiles.json"
             if not default_path.parent.exists():
                 default_path = Path("device_identity_profiles.json")
@@ -35,12 +34,18 @@ class JsonDipStorageAdapter(DipStoragePort):
 
     def load_profiles(self) -> Dict[str, Dict[str, Any]]:
         """
-        Deprecated static JSON adapter reader.
-        Disk reads to device_identity_profiles.json are decommissioned in favor of
-        dynamic SQLite ledger and topological ASH memory retrieval.
-        Returns empty dictionary.
+        Thread-safe load of serialized profiles from the JSON storage target.
+        Returns empty dictionary if file does not exist or contains invalid JSON.
         """
-        return {}
+        with self._lock:
+            if not self.path.exists():
+                return {}
+            try:
+                with open(self.path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data if isinstance(data, dict) else {}
+            except Exception:
+                return {}
 
     def save_profiles(self, profiles: Dict[str, Dict[str, Any]]) -> bool:
         """
@@ -65,4 +70,3 @@ class JsonDipStorageAdapter(DipStoragePort):
                     except Exception:
                         pass
                 return False
-
