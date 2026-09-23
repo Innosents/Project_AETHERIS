@@ -1,4 +1,4 @@
-﻿"""
+"""
 Project AETHERIS - Device Identity Profile (DIP) Manager.
 Dynamic identity caching, learning, and environmental cross-referencing engine.
 Decoupled from direct disk serialization via DipStoragePort.

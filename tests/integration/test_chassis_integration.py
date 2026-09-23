@@ -1,4 +1,4 @@
-﻿"""Integration test verifying passive L2 chassis dissection and adapter orchestration."""
+"""Integration test verifying passive L2 chassis dissection and adapter orchestration."""
 import pytest
 from unittest.mock import MagicMock
 from scapy.all import Ether

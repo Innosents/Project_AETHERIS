@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for GraphStorePort and GraphStore adapter.
 Validates AST boundary isolation, protocol conformance, edge spatial attributes, and Cytoscape serialization.
 """

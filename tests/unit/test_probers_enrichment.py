@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit tests validating Phase 1, Phase 2, and Phase 3 prober remediation:
 - SpanCaptureEngine multiplexing and delegation
 - Sanitization of NaN, Inf, and dataclasses

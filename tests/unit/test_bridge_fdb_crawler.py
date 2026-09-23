@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for BridgeFdbCrawlerPort and bridge_fdb_crawler shim.
 Validates AST boundary isolation, protocol conformance, and pure MAC/VLAN parsing logic.
 """

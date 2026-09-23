@@ -1,4 +1,4 @@
-﻿"""
+"""
 Project AETHERIS - Chassis Intelligence Adapter & Compatibility Bridge.
 Connects orchestrator delegates with ErspanChassisAdapter and maintains chassis_matrix state.
 """

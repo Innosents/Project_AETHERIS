@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for BannerGrabPort and BannerGrabber adapter.
 Validates AST boundary isolation, protocol conformance, and pure HTTP/TLS token parsing.
 """

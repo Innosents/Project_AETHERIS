@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for PortScanPort and port_scan adapter.
 Validates AST boundary isolation, protocol conformance, socket mocking, and schema dual-access.
 """

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit Test Suite for Anchor Subgraph Resolver & Topological Memory Transition.
 Validates:
 1. Deterministic canonical SHA-256 fingerprinting for Anchor Subgraph Hashing (ASH).

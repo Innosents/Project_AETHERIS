@@ -1,4 +1,4 @@
-﻿# Phase 56 Engineering Receipt: Hexagonal Decoupling of Active Service Probe
+# Phase 56 Engineering Receipt: Hexagonal Decoupling of Active Service Probe
 
 ## 1. Metadata
 - **Phase**: Phase 56

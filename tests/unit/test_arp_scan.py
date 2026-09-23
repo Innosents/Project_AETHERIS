@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for ArpScanPort and ArpScanner adapter.
 Validates AST boundary isolation, protocol conformance, and mock ARP table parsing.
 """

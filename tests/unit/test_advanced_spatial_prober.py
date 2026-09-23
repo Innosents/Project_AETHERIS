@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for AdvancedSpatialProberPort and AdvancedSpatialProber.
 Validates AST boundary isolation, physical cable calculations, RFC 7323 parsing, and Option 82 pinning.
 """

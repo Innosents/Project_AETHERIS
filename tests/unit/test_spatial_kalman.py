@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for SpatialKalmanPort and SpatialKalmanEstimator adapter.
 Validates AST boundary isolation, protocol conformance, Kalman gain updates, and schema dual-access.
 """

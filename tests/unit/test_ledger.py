@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for LedgerPort and AetherisLedger adapter.
 Validates AST boundary isolation, protocol conformance, mock in-memory operations, and schema dual-access.
 """

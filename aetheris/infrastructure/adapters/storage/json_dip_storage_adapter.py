@@ -1,4 +1,4 @@
-﻿"""
+"""
 Project AETHERIS - JSON Device Identity Profile Storage Adapter.
 Implements DipStoragePort with thread-safe atomic swaps and file locking.
 """

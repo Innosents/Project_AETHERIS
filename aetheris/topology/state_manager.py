@@ -1,4 +1,4 @@
-﻿"""
+"""
 Project AETHERIS - State Manager
 Maintains a memory-bounded dual-ledger topology matrix that segregates persistent infrastructure nodes from LRU-evicted ephemeral telemetry streams. Computes discrete O(1) additive and destructive 
 delta frames to stream bandwidth-optimized graph mutations over asynchronous WebSockets.

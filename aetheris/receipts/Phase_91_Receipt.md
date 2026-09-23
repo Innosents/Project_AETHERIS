@@ -1,4 +1,4 @@
-﻿# Phase 91 Engineering Receipt: Full-Stack Hexagonal E2E Pipeline Integration Verification
+# Phase 91 Engineering Receipt: Full-Stack Hexagonal E2E Pipeline Integration Verification
 
 ## 1. Metadata
 - **Phase**: Phase 91

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for SpatialBayesianSolverPort and BayesianEvidenceFusion adapter.
 Validates AST boundary isolation, protocol conformance, likelihood normalization, and schema dual-access.
 """

@@ -1,4 +1,4 @@
-﻿# Phase 94 Engineering Receipt: Chassis Prober Modernization, Hexagonal Persistence Harmonization & Legacy Quarantine Deprecation
+# Phase 94 Engineering Receipt: Chassis Prober Modernization, Hexagonal Persistence Harmonization & Legacy Quarantine Deprecation
 
 ## 1. Metadata
 - **Phase**: Phase 94

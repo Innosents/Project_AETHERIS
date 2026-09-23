@@ -1,4 +1,4 @@
-﻿"""
+"""
 Project AETHERIS - End-to-End Hexagonal Pipeline Integration Test Suite.
 Validates end-to-end execution across decoupled port contracts:
 1. SpatialOrchestratorPort telemetry gathering and Bayesian projection.

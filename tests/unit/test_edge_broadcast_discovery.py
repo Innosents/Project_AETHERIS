@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for EdgeBroadcastDiscoveryPort and EdgeBroadcastEngine adapter.
 Validates AST boundary isolation, protocol conformance, and schema dual-access invariants.
 """

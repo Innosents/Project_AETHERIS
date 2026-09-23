@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for TopologyStateManagerPort and state manager adapter.
 Validates AST boundary isolation, protocol conformance, LRU drops, delta flushing, and schema dual-access.
 """

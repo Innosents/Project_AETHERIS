@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for RawPacketTapPort and RawPacketTap adapter.
 Validates AST boundary isolation, protocol conformance, timing pulse calculations, and schema dual-access.
 """

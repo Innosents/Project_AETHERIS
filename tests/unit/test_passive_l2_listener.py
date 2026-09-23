@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for PassiveL2ListenerPort and PassiveL2TopologyListener adapter.
 Validates AST boundary isolation, protocol conformance, packet dissection, and schema dual-access.
 """
