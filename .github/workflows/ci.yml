@@ -1,4 +1,4 @@
-name: AETHERIS Hexagonal Core CI
+﻿name: AETHERIS Hexagonal Core CI
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
     - name: Install Core Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pydantic numpy networkx loguru pytest
+        pip install pydantic numpy networkx loguru pytest hypothesis scipy pytest-asyncio
 
     - name: Verify Architectural AST Boundaries
       run: |
