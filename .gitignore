@@ -84,3 +84,8 @@ device_identity_profiles.json
 .aetheris/
 .venv_wsl/
 .patch_archive/
+
+*.db
+*.db-wal
+*.db-shm
+spatial_ledger.db
