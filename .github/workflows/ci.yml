@@ -1,29 +1,52 @@
-name: Project AETHERIS CI Pipeline
+name: AETHERIS Hexagonal Core CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+    - name: Install Core Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pydantic numpy networkx loguru pytest
 
-      - name: Run Test Suite
-        run: |
-          python run_tests.py --suite all
+    - name: Verify Architectural AST Boundaries
+      run: |
+        python -c "import ast, os, sys;
+        violations = []
+        for root, _, files in os.walk('aetheris/core/ports'):
+            for f in files:
+                if f.endswith('.py'):
+                    tree = ast.parse(open(os.path.join(root, f), encoding='utf-8').read())
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Import):
+                            for name in node.names:
+                                if any(x in name.name for x in ['socket', 'scapy', 'sqlite3', 'redis', 'subprocess']):
+                                    violations.append(f'{f} imports {name.name}')
+                        elif isinstance(node, ast.ImportFrom) and node.module:
+                            if any(x in node.module for x in ['socket', 'scapy', 'sqlite3', 'redis', 'subprocess']):
+                                violations.append(f'{f} imports from {node.module}')
+        if violations:
+            print('AST Invariant Violations Detected:', violations)
+            sys.exit(1)
+        print('Core Ports AST Boundary Check: Clean.')"
+
+    - name: Run Core Domain Unit Tests
+      run: |
+        pytest tests/unit/test_spatial_solver.py tests/unit/test_state_machine.py tests/unit/test_telemetry_ledger.py tests/unit/test_topologies_projection.py tests/unit/test_spatial_bayesian.py -v

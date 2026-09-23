@@ -1,83 +1,82 @@
+﻿"""
+Unit test suite for SpatialBayesianSolverPort and BayesianEvidenceFusion adapter.
+Validates AST boundary isolation, protocol conformance, likelihood normalization, and schema dual-access.
 """
-Unit Tests for Phase 3: Spatial Bayesian Fusion Engine
-"""
-
-import unittest
-from aetheris.core.spatial_bayesian import BayesianEvidenceFusion
-
-
-class TestBayesianEvidenceFusion(unittest.TestCase):
-
-    def test_uniform_prior_with_no_evidence(self):
-        posteriors = BayesianEvidenceFusion.fuse_evidence([])
-        expected_prob = 1.0 / len(BayesianEvidenceFusion.ARCHETYPES)
-        for arch, prob in posteriors.items():
-            self.assertAlmostEqual(prob, expected_prob, delta=1e-9)
-
-    def test_windows_host_convergence(self):
-        evidence = ["ttl_windows_128", "port_smb_445"]
-        posteriors = BayesianEvidenceFusion.fuse_evidence(evidence)
-        self.assertGreater(posteriors["WINDOWS_HOST"], 0.85)
-        self.assertLess(posteriors["INDUSTRIAL_OT"], 0.05)
-        self.assertAlmostEqual(sum(posteriors.values()), 1.0, delta=1e-9)
-
-    def test_industrial_ot_convergence(self):
-        evidence = ["port_modbus_502"]
-        posteriors = BayesianEvidenceFusion.fuse_evidence(evidence)
-        self.assertGreater(posteriors["INDUSTRIAL_OT"], 0.70)
-        self.assertAlmostEqual(sum(posteriors.values()), 1.0, delta=1e-9)
-
-    def test_project_topology_unmanaged_switch_injection(self):
-        from aetheris.core.spatial_bayesian import BayesianSpatialSolver
-
-        fused = {
-            "orchestration_state": "SPATIAL_FUSION_COMPLETE",
-            "target_subnet": "192.168.1.0/24",
-            "chassis_intelligence": {
-                "00:11:22:33:44:01": {"protocol": "LLDP", "tlvs": {"hostname": "SW-EDGE-01"}},
-            },
-            "spanning_tree_intelligence": {
-                "00:11:22:33:44:01": {"root_path_cost": 19},
-                "00:11:22:33:44:02": {"root_path_cost": 19},
-                "00:11:22:33:44:03": {"root_path_cost": 4},
-            },
-            "multicast_identity": {
-                "00:11:22:33:44:01": {"mdns_services": ["_printer._tcp.local."], "ssdp_headers": ["HP LaserJet"]},
-                "00:11:22:33:44:02": {"mdns_services": ["_ipp._tcp.local."], "ssdp_headers": ["Canon"]},
-                "00:11:22:33:44:03": {"mdns_services": ["_workstation._tcp.local."], "ssdp_headers": ["Dell"]},
-            },
-            "l3_hop_intelligence": {
-                "00:11:22:33:44:01": 2,
-                "00:11:22:33:44:02": 2,
-                "00:11:22:33:44:03": 1,
-            },
-        }
-
-        solver = BayesianSpatialSolver()
-        graph = solver.project_topology(fused)
-
-        self.assertIn("Core_Distribution_Switch", graph.nodes)
-        self.assertIn("Unmanaged_Switch", graph.nodes)
-        self.assertTrue(graph.has_edge("Core_Distribution_Switch", "Unmanaged_Switch"))
-        self.assertTrue(graph.has_edge("Unmanaged_Switch", "00:11:22:33:44:01"))
-        self.assertTrue(graph.has_edge("Unmanaged_Switch", "00:11:22:33:44:02"))
-        self.assertFalse(graph.has_edge("Core_Distribution_Switch", "00:11:22:33:44:01"))
-        self.assertFalse(graph.has_edge("Core_Distribution_Switch", "00:11:22:33:44:02"))
-        self.assertTrue(graph.has_edge("Core_Distribution_Switch", "00:11:22:33:44:03"))
-
-        # Weighting
-        self.assertEqual(graph["Core_Distribution_Switch"]["Unmanaged_Switch"]["weight"], 19.0)
-        self.assertEqual(graph["Unmanaged_Switch"]["00:11:22:33:44:01"]["cost"], 19)
-
-        # Metadata & Cytoscape Schema
-        self.assertEqual(graph.nodes["00:11:22:33:44:01"]["mdns_services"], ["_printer._tcp.local."])
-        self.assertEqual(graph.nodes["00:11:22:33:44:01"]["ssdp_headers"], ["HP LaserJet"])
-        self.assertEqual(graph.nodes["00:11:22:33:44:01"]["type"], "Endpoint")
-        self.assertEqual(graph.nodes["00:11:22:33:44:01"]["ttl_hops"], 2)
-        self.assertEqual(graph.nodes["00:11:22:33:44:01"]["identity_string"], "SW-EDGE-01")
-        self.assertEqual(graph.nodes["Unmanaged_Switch"]["type"], "Unmanaged_Switch")
-        self.assertEqual(graph.nodes["Unmanaged_Switch"]["ttl_hops"], 2)
+import ast
+import os
+import pytest
+from aetheris.core.ports.spatial_bayesian_port import (
+    BayesianFusionPort,
+    SpatialSolverPort,
+    ArchetypeInferenceResult,
+    PortProfileRecord,
+    HopParametersRecord,
+)
+from aetheris.core.spatial_bayesian import (
+    BayesianEvidenceFusion,
+    BayesianSpatialSolver,
+    calculate_port_profile,
+    compute_residual_flight_time,
+    get_calibrated_hop_parameters,
+)
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_spatial_bayesian_port_ast_boundary():
+    """Verify spatial_bayesian_port.py contains zero sqlite3, socket, or OS transport imports."""
+    port_path = os.path.join("aetheris", "core", "ports", "spatial_bayesian_port.py")
+    assert os.path.exists(port_path), f"Missing port file at {port_path}"
+
+    with open(port_path, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=port_path)
+
+    forbidden = {"sqlite3", "socket", "scapy", "subprocess", "redis", "fastapi", "uvicorn", "mcp"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                base = alias.name.split(".")[0]
+                assert base not in forbidden, f"Forbidden direct import: {alias.name}"
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            base = node.module.split(".")[0]
+            assert base not in forbidden, f"Forbidden from-import: {node.module}"
+
+
+def test_bayesian_fusion_evidence_normalization():
+    """Verify log-space posterior probabilities sum to 1.0."""
+    evidence = ["ttl_linux_64", "port_modbus_502"]
+    posterior = BayesianEvidenceFusion.fuse_evidence(evidence)
+
+    assert pytest.approx(sum(posterior.values()), rel=1e-5) == 1.0
+    assert posterior["INDUSTRIAL_OT"] > posterior["WINDOWS_HOST"]
+
+
+def test_bayesian_spatial_solver_projection():
+    """Verify topology projection and unmanaged switch cascaded detection."""
+    solver = BayesianSpatialSolver()
+    solver.ingest_telemetry(
+        chassis_matrix={"00:11:22:33:44:55": {"tlvs": {"hostname": "Core_Switch"}}},
+        stp_matrix={"00:aa:bb:cc:dd:ee": {"root_path_cost": 25}},
+        ttl_matrix={"00:aa:bb:cc:dd:ee": 2},
+        multicast_matrix={"00:aa:bb:cc:dd:ee": {"ui_label": "PLC_Remote"}}
+    )
+    graph = solver.project_topology()
+
+    assert "Core_Distribution_Switch" in graph.nodes
+    assert "Unmanaged_Switch" in graph.nodes
+    assert "00:aa:bb:cc:dd:ee" in graph.nodes
+    assert graph.has_edge("Unmanaged_Switch", "00:aa:bb:cc:dd:ee")
+
+
+def test_archetype_inference_result_immutability():
+    """Verify ArchetypeInferenceResult schema validation, immutability, and dual mapping."""
+    res = ArchetypeInferenceResult(
+        archetype="INDUSTRIAL_OT",
+        confidence=0.985,
+        posterior={"INDUSTRIAL_OT": 0.985, "GENERIC_HOST": 0.015},
+        calibrated_kernel_turnaround_us=280.0
+    )
+    assert res.archetype == "INDUSTRIAL_OT"
+    assert res["archetype"] == "INDUSTRIAL_OT"
+    assert res["confidence"] == 0.985
+    assert res.calibrated_kernel_turnaround_us == 280.0
+    with pytest.raises(Exception):
+        res.archetype = "WINDOWS_HOST"

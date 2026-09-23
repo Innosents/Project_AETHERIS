@@ -3,9 +3,11 @@ Project AETHERIS - Mercury Security Physical Sub-Peripheral Geolocation & Spatia
 Calculates estimated physical cable run distances using dual-segment voltage drop
 and switch-to-injector TDR measurements.
 """
+from __future__ import annotations
+
 import math
 import re
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union
 
 from aetheris.core.spatial_dc_drop import (
     PeripheralElectricalEnvelope,
@@ -15,6 +17,11 @@ from aetheris.core.spatial_dc_drop import (
     COPPER_TEMP_COEFF_ALPHA,
     METERS_TO_FEET,
     FEET_TO_METERS,
+)
+from aetheris.core.ports.mercury_spatial_resolver_port import (
+    MercurySpatialResolverPort,
+    PeripheralSpatialTelemetry,
+    _MappingCompatibleModel,
 )
 
 # Resistance values in Ohms per foot for solid/stranded copper conductors at 20°C
@@ -43,8 +50,7 @@ DEFAULT_AWG_BY_TYPE = {
 }
 
 
-class MercurySpatialResolver:
-    @staticmethod
+class MercurySpatialResolver(MercurySpatialResolverPort):
     @staticmethod
     def calculate_cable_distance_feet(
         v_source: float,
@@ -95,7 +101,6 @@ class MercurySpatialResolver:
         return round(distance_feet, 2)
 
     @classmethod
-    @classmethod
     def resolve_peripheral_spatial_telemetry(
         cls,
         controller_id: str,
@@ -108,7 +113,7 @@ class MercurySpatialResolver:
         baud_rate: int = 9600,
         temp_c: float = 20.0,
         raise_on_divergence: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> PeripheralSpatialTelemetry:
         """
         Produces spatial physical path and cable distance telemetry for downstream access hardware.
         Implements Dual-Constraint Fusion:
@@ -192,7 +197,7 @@ class MercurySpatialResolver:
                         peripheral_id=peripheral.get("id"),
                     )
 
-        telemetry: Dict[str, Any] = {
+        telemetry_dict: Dict[str, Any] = {
             "peripheral_id": peripheral.get("id"),
             "controller_id": controller_id,
             "device_type": dev_type,
@@ -221,12 +226,22 @@ class MercurySpatialResolver:
             ),
         }
         if shared_trunk_current is not None:
-            telemetry["shared_trunk_current_amps"] = shared_trunk_current
-            telemetry["topology"] = peripheral.get("topology", "multidrop")
+            telemetry_dict["shared_trunk_current_amps"] = shared_trunk_current
+            telemetry_dict["topology"] = peripheral.get("topology", "multidrop")
 
         if baud_expected is not None:
-            telemetry["baud_divergence_ratio"] = round(divergence_ratio, 4)
-            telemetry["high_resistance_anomaly"] = high_resistance_anomaly
+            telemetry_dict["baud_divergence_ratio"] = round(divergence_ratio, 4)
+            telemetry_dict["high_resistance_anomaly"] = high_resistance_anomaly
 
-        return telemetry
+        return PeripheralSpatialTelemetry(**telemetry_dict)
 
+
+__all__ = [
+    "MercurySpatialResolver",
+    "MercurySpatialResolverPort",
+    "PeripheralSpatialTelemetry",
+    "AWG_RESISTANCE_OHMS_PER_FOOT",
+    "PERIPHERAL_NOMINAL_DRAW_AMPS",
+    "DEFAULT_AWG_BY_TYPE",
+    "_MappingCompatibleModel",
+]

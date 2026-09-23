@@ -1,129 +1,132 @@
-"""Transport-free contracts for Bayesian spatial fusion and topology projection."""
-
-from typing import Any, Dict, List, Protocol, runtime_checkable
-
+"""
+Project AETHERIS - Spatial Bayesian Fusion Engine Port Interface
+Hexagonal Protocol defining Bayesian archetype evidence fusion, calibrated
+kernel turnaround offsets, and multi-layer topology projection.
+Strict zero-I/O boundary: Contains zero sqlite3, socket, subprocess, or network transport imports.
+"""
+from typing import Protocol, runtime_checkable, Optional, Dict, Any, List
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class _MappingCompatibleModel(BaseModel):
-    """Frozen Pydantic payload retaining legacy dictionary access."""
+class _MappingCompatibleModel(dict):
+    """Dual-mode structure supporting attribute lookups, dict access, CPython json.dumps, and frozen immutability."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        is_frozen = getattr(self.__class__, "_frozen", False) or getattr(self.__class__, "frozen", False)
+        if hasattr(self.__class__, "model_config"):
+            cfg = getattr(self.__class__, "model_config")
+            if isinstance(cfg, dict) and cfg.get("frozen"):
+                is_frozen = True
+            elif getattr(cfg, "frozen", False):
+                is_frozen = True
+        if hasattr(self.__class__, "Config"):
+            cfg_cls = getattr(self.__class__, "Config")
+            if getattr(cfg_cls, "frozen", False):
+                is_frozen = True
+        object.__setattr__(self, "_is_frozen", is_frozen)
 
-    model_config = ConfigDict(frozen=True, extra="allow")
+    def __getattribute__(self, item: str) -> Any:
+        try:
+            return self[item]
+        except (KeyError, TypeError):
+            pass
+        return super().__getattribute__(item)
 
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
+    def __setattr__(self, item: str, value: Any) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        self[item] = value
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
+    def __setitem__(self, item: str, value: Any) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        super().__setitem__(item, value)
 
-    def __contains__(self, key: str) -> bool:
-        if key in self.__class__.model_fields:
-            return getattr(self, key) is not None
-        return key in (self.__pydantic_extra__ or {})
+    def __delattr__(self, item: str) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        try:
+            del self[item]
+        except KeyError:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
-    def keys(self):
-        return self.model_dump().keys()
+    def __delitem__(self, item: str) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        super().__delitem__(item)
 
-    def items(self):
-        return self.model_dump().items()
+    def get(self, item: str, default: Any = None) -> Any:
+        return super().get(item, default)
 
-    def values(self):
-        return self.model_dump().values()
+    def model_dump(self) -> Dict[str, Any]:
+        return dict(self)
 
-    def __len__(self) -> int:
-        return len(self.model_dump())
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        if key in self.__class__.model_fields:
-            raise TypeError("Declared Bayesian fields are immutable")
-        extra = dict(self.__pydantic_extra__ or {})
-        extra[key] = value
-        object.__setattr__(self, "__pydantic_extra__", extra)
-
-
-class EvidenceItem(_MappingCompatibleModel):
-    """Validated evidence payload."""
-
-    evidence_key: str = Field(..., min_length=1)
-    confidence: float = 1.0
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class ArchetypeProbability(_MappingCompatibleModel):
-    """Validated archetype probability entry."""
-
-    archetype: str = Field(..., min_length=1)
-    probability: float
-    log_likelihood: float = 0.0
-
-
-class BayesianFusionResult(_MappingCompatibleModel):
-    """Validated fused Bayesian outcome."""
-
-    predicted_archetype: str = Field(..., min_length=1)
-    confidence_pct: float
-    distribution: Dict[str, float]
-    evidence_count: int
+    def dict(self) -> Dict[str, Any]:
+        return dict(self)
 
 
-class HopPenaltyProfile(_MappingCompatibleModel):
-    """Validated per-hop latency penalty profile."""
+class ArchetypeInferenceResult(_MappingCompatibleModel):
+    model_config = ConfigDict(frozen=True)
+    archetype: str = Field(...)
+    confidence: float = Field(...)
+    posterior: Dict[str, float] = Field(default_factory=dict)
+    raw_tau_ns_samples: List[float] = Field(default_factory=list)
+    min_tau_ns: float = Field(default=0.0)
+    calibrated_kernel_turnaround_us: float = Field(default=1000.0)
 
-    port_or_id: str = Field(..., min_length=1)
-    penalty_ns: float
-    penalty_us: float
-    penalty_sec: float
+
+class PortProfileRecord(_MappingCompatibleModel):
+    model_config = ConfigDict(frozen=True)
+    port_id: str = Field(default="Unknown")
+    link_speed_mbps: int = Field(default=1000)
+    connection_type: str = Field(default="Ethernet")
+    t_hop_ns: float = Field(default=18.5)
+    is_wireless: bool = Field(default=False)
 
 
-class SpatialPathConstraint(_MappingCompatibleModel):
-    """Validated spatial path constraint."""
-
-    source_id: str = Field(..., min_length=1)
-    target_id: str = Field(..., min_length=1)
-    hop_count: int
-    residual_flight_time_ns: float
-    estimated_distance_m: float
+class HopParametersRecord(_MappingCompatibleModel):
+    model_config = ConfigDict(frozen=True)
+    tier: str = Field(...)
+    hop_delay_ns: float = Field(...)
+    effective_rate_mbps: int = Field(...)
+    sigma_jitter_ns: float = Field(...)
 
 
 @runtime_checkable
 class BayesianFusionPort(Protocol):
-    """Port for evidence fusion and archetype inference."""
+    """Hexagonal Protocol defining Bayesian likelihood calculation and latency compensation."""
+    __test__ = False
 
     @classmethod
     def fuse_evidence(cls, observed_keys: List[str]) -> Dict[str, float]:
+        """Calculates normalized posterior probabilities across archetypes."""
         ...
 
     @classmethod
     def infer_archetype_from_flight_times(
         cls,
         observed_keys: List[str],
-        tau_ns_samples: List[float],
-    ) -> Any:
-        ...
-
-    @classmethod
-    def get_switch_fabric_offset_us(cls) -> float:
-        ...
-
-    @classmethod
-    def get_calibrated_kernel_turnaround_us(cls, archetype: str) -> float:
+        tau_ns_samples: List[float]
+    ) -> ArchetypeInferenceResult:
+        """Infers device archetype based on observed tokens and nanosecond flight times."""
         ...
 
 
 @runtime_checkable
 class SpatialSolverPort(Protocol):
-    """Port for projecting fused evidence into a topology graph."""
+    """Hexagonal Protocol defining graph projection from ingested discovery matrices."""
+    __test__ = False
 
-    def project_topology(self, fused_matrix: Dict[str, Any]) -> Any:
+    def ingest_telemetry(
+        self,
+        chassis_matrix: Optional[Dict[str, Any]] = None,
+        stp_matrix: Optional[Dict[str, Any]] = None,
+        ttl_matrix: Optional[Dict[str, Any]] = None,
+        multicast_matrix: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Ingests raw multi-signal telemetry matrices."""
         ...
 
-
-__all__ = [
-    "EvidenceItem",
-    "ArchetypeProbability",
-    "BayesianFusionResult",
-    "HopPenaltyProfile",
-    "SpatialPathConstraint",
-    "BayesianFusionPort",
-    "SpatialSolverPort",
-]
+    def project_topology(self, fused_matrix: Optional[Dict[str, Any]] = None) -> Any:
+        """Projects ingested matrices into a directed topology graph."""
+        ...

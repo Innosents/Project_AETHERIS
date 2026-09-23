@@ -13,13 +13,22 @@ import re
 from typing import Dict, Any, Optional, List, Union, Tuple
 from loguru import logger
 
+from aetheris.core.ports.advanced_spatial_prober_port import (
+    AdvancedSpatialProberPort,
+    DhcpOption82PinResult,
+    FlightDistanceResult,
+    PassiveTcpJitterResult,
+    SpatialAttenuationResult,
+    SpatialPruningBoundaryResult,
+)
+
 SPEED_OF_LIGHT = 299_792_458  # meters/sec
 DEFAULT_NVP = 0.69             # Nominal Velocity of Propagation for Cat5e/Cat6 copper
 NVP_CAMERA_POE = 0.70          # Modern Cat6/Cat6a shielded runs (Axis, Hikvision)
 NVP_PLC_INDUSTRIAL = 0.68      # Legacy Cat5/Cat5e industrial plants (Siemens, Rockwell)
 
 
-class AdvancedSpatialProber:
+class AdvancedSpatialProber(AdvancedSpatialProberPort):
     """
     Executes non-credentialed Layer 2/4 spatial interrogation to isolate
     physical media distance and exact switch port attachments.
@@ -74,7 +83,7 @@ class AdvancedSpatialProber:
         vendor: Optional[str] = None,
         device_type: Optional[str] = None,
         hardware_profile: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> FlightDistanceResult:
         """
         Calculates conductor length (meters) from measured microsecond flight time.
         Deducts nominal kernel TCP/IP context switch baseline (~50us for local LAN switch).
@@ -116,18 +125,18 @@ class AdvancedSpatialProber:
         # Confidence is highest when flight time is consistent and within standard Ethernet reach
         confidence = 0.85 if flight_us <= 200.0 else (0.75 if flight_us <= 1000.0 else 0.60)
 
-        return {
-            "raw_rtt_us": round(flight_us, 2),
-            "baseline_deduction_us": baseline_deduction_us,
-            "net_flight_us": round(net_flight_us, 3),
-            "one_way_flight_ns": round(one_way_flight_s * 1e9, 2),
-            "estimated_distance_meters": clamped_distance,
-            "estimated_distance_feet": round(clamped_distance * 3.28084, 2),
-            "confidence_score": confidence,
-            "nvp_calibrated": round(resolved_nvp, 4),
-            "nvp_source": nvp_source,
-            "derivation_method": "MICROSECOND_TCP_FLIGHT_CALIBRATION"
-        }
+        return FlightDistanceResult(
+            raw_rtt_us=round(flight_us, 2),
+            baseline_deduction_us=baseline_deduction_us,
+            net_flight_us=round(net_flight_us, 3),
+            one_way_flight_ns=round(one_way_flight_s * 1e9, 2),
+            estimated_distance_meters=clamped_distance,
+            estimated_distance_feet=round(clamped_distance * 3.28084, 2),
+            confidence_score=confidence,
+            nvp_calibrated=round(resolved_nvp, 4),
+            nvp_source=nvp_source,
+            derivation_method="MICROSECOND_TCP_FLIGHT_CALIBRATION",
+        )
 
     @classmethod
     def measure_tcp_timestamp_flight(
@@ -137,7 +146,7 @@ class AdvancedSpatialProber:
         timeout: float = 0.4,
         samples: int = 3,
         baseline_deduction_us: float = 50.0
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[FlightDistanceResult]:
         """
         Connects with TCP_NODELAY across open port, measuring microsecond flight times.
         Takes multiple samples to eliminate scheduling jitter outliers.
@@ -145,10 +154,11 @@ class AdvancedSpatialProber:
         measurements: List[float] = []
 
         for _ in range(samples):
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            sock.settimeout(timeout)
+            sock = None
             try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                sock.settimeout(timeout)
                 t_start = time.perf_counter()
                 sock.connect((ip, port))
                 t_elapsed = (time.perf_counter() - t_start) * 1e6  # Microseconds
@@ -157,6 +167,8 @@ class AdvancedSpatialProber:
                 pass
             finally:
                 try:
+                    if sock is None:
+                        continue
                     sock.close()
                 except Exception:
                     pass
@@ -173,10 +185,13 @@ class AdvancedSpatialProber:
             flight_us=best_rtt_us,
             baseline_deduction_us=baseline_deduction_us
         )
-        res["jitter_us"] = round(jitter_us, 2)
-        res["sample_count"] = len(measurements)
-        res["target_port"] = port
-        return res
+        return res.model_copy(
+            update={
+                "jitter_us": round(jitter_us, 2),
+                "sample_count": len(measurements),
+                "target_port": port,
+            }
+        )
 
     @staticmethod
     def extract_tcp_timestamps(raw_tcp_header: bytes) -> Optional[Dict[str, Any]]:
@@ -249,7 +264,7 @@ class AdvancedSpatialProber:
         history: List[Tuple[int, int, int]],
         os_profile: Optional[str] = None,
         max_window: int = 32,
-    ) -> Dict[str, Any]:
+    ) -> PassiveTcpJitterResult:
         """
         Evaluates passive TCP RFC 7323 timestamp jitter against a sliding window.
         Detects SPAN port buffer bloat anomalies (top 5% outliers or >3*MAD)
@@ -260,15 +275,15 @@ class AdvancedSpatialProber:
         deduction_us = cls.get_os_kernel_deduction(os_profile)
 
         if not history:
-            return {
-                "accepted": True,
-                "jitter_us": 0.0,
-                "delta_arrival_us": 0.0,
-                "median_arrival_us": 0.0,
-                "baseline_deduction_us": deduction_us,
-                "sample_count": 1,
-                "buffer_bloat_discard": False,
-            }
+            return PassiveTcpJitterResult(
+                accepted=True,
+                jitter_us=0.0,
+                delta_arrival_us=0.0,
+                median_arrival_us=0.0,
+                baseline_deduction_us=deduction_us,
+                sample_count=1,
+                buffer_bloat_discard=False,
+            )
 
         prev_ts_val, prev_ts_ecr, prev_arrival_ns = history[-1]
         delta_arrival_us = max(0.0, (arrival_ns - prev_arrival_ns) / 1000.0)
@@ -293,15 +308,15 @@ class AdvancedSpatialProber:
             if delta_arrival_us > p95:
                 is_outlier = True
 
-        return {
-            "accepted": not is_outlier,
-            "jitter_us": round(abs(delta_arrival_us - med), 3),
-            "delta_arrival_us": round(delta_arrival_us, 3),
-            "median_arrival_us": round(med, 3),
-            "baseline_deduction_us": deduction_us,
-            "sample_count": len(history) + 1,
-            "buffer_bloat_discard": is_outlier,
-        }
+        return PassiveTcpJitterResult(
+            accepted=not is_outlier,
+            jitter_us=round(abs(delta_arrival_us - med), 3),
+            delta_arrival_us=round(delta_arrival_us, 3),
+            median_arrival_us=round(med, 3),
+            baseline_deduction_us=deduction_us,
+            sample_count=len(history) + 1,
+            buffer_bloat_discard=is_outlier,
+        )
 
     @classmethod
     def calculate_spatial_attenuation(
@@ -310,7 +325,7 @@ class AdvancedSpatialProber:
         baseline_deduction_us: float = 50.0,
         nvp: Optional[float] = None,
         nominal_attenuation_db_per_meter: float = 0.22,
-    ) -> Dict[str, Any]:
+    ) -> SpatialAttenuationResult:
         """
         Calculates physical conductor spatial attenuation (dB) and flight distance
         from microsecond flight time in accordance with AETHERIS Constitution v2.4:
@@ -330,19 +345,19 @@ class AdvancedSpatialProber:
             distance_m = round(max(0.5, min(one_way_flight_s * v_prop, 150.0)), 2)
 
         attenuation_db = round(distance_m * nominal_attenuation_db_per_meter, 3)
-        return {
-            "tau_flight_us": round(tau_flight_us, 4),
-            "tau_flight_ns": round(tau_flight_us * 1000.0, 2),
-            "estimated_distance_m": distance_m,
-            "spatial_attenuation_db": attenuation_db,
-            "nvp": round(nvp_val, 4),
-            "nominal_attenuation_rate_db_m": nominal_attenuation_db_per_meter,
-        }
+        return SpatialAttenuationResult(
+            tau_flight_us=round(tau_flight_us, 4),
+            tau_flight_ns=round(tau_flight_us * 1000.0, 2),
+            estimated_distance_m=distance_m,
+            spatial_attenuation_db=attenuation_db,
+            nvp=round(nvp_val, 4),
+            nominal_attenuation_rate_db_m=nominal_attenuation_db_per_meter,
+        )
 
     @classmethod
     def evaluate_ptp_hardware_timestamp_viability(
         cls, interface: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> SpatialPruningBoundaryResult:
         """
         Evaluates the viability of IEEE 1588 PTP hardware timestamping on the host NIC.
         Interrogates kernel SO_TIMESTAMPING / SIOCGHWTSTAMP ioctl on Linux,
@@ -407,35 +422,35 @@ class AdvancedSpatialProber:
         4. NOMINAL_LOCAL_COPPER: otherwise.
         """
         if net_flight_us is not None and net_flight_us > 2000.0:
-            return {
-                "spatial_state": "WAN_ROUTED",
-                "bypass_copper_limits": True,
-                "prune_high_throughput": False,
-                "reason": f"Flight time ({net_flight_us:.1f}us > 2000us) indicates WAN/SD-WAN multi-hop transit; localized physics pruning bypassed.",
-            }
+            return SpatialPruningBoundaryResult(
+                spatial_state="WAN_ROUTED",
+                bypass_copper_limits=True,
+                prune_high_throughput=False,
+                reason=f"Flight time ({net_flight_us:.1f}us > 2000us) indicates WAN/SD-WAN multi-hop transit; localized physics pruning bypassed.",
+            )
 
         if is_trunk:
-            return {
-                "spatial_state": "TRUNK_UPLINK",
-                "bypass_copper_limits": True,
-                "prune_high_throughput": False,
-                "reason": "Target switchport is flagged as an aggregation trunk uplink (fiber-optic / AOC); 100m copper limit bypassed.",
-            }
+            return SpatialPruningBoundaryResult(
+                spatial_state="TRUNK_UPLINK",
+                bypass_copper_limits=True,
+                prune_high_throughput=False,
+                reason="Target switchport is flagged as an aggregation trunk uplink (fiber-optic / AOC); 100m copper limit bypassed.",
+            )
 
         if estimated_distance_m is not None and estimated_distance_m > 110.0:
-            return {
-                "spatial_state": "OUT_OF_SPEC_COPPER",
-                "bypass_copper_limits": False,
-                "prune_high_throughput": True,
-                "reason": f"Estimated copper distance ({estimated_distance_m:.1f}m > 110m) exceeds IEEE 802.3 standard; pruning RTSP and heavy web sweeps to protect link stability.",
-            }
+            return SpatialPruningBoundaryResult(
+                spatial_state="OUT_OF_SPEC_COPPER",
+                bypass_copper_limits=False,
+                prune_high_throughput=True,
+                reason=f"Estimated copper distance ({estimated_distance_m:.1f}m > 110m) exceeds IEEE 802.3 standard; pruning RTSP and heavy web sweeps to protect link stability.",
+            )
 
-        return {
-            "spatial_state": "NOMINAL_LOCAL_COPPER",
-            "bypass_copper_limits": False,
-            "prune_high_throughput": False,
-            "reason": "Target physical drop is within standard IEEE 802.3 specification (<=110m).",
-        }
+        return SpatialPruningBoundaryResult(
+            spatial_state="NOMINAL_LOCAL_COPPER",
+            bypass_copper_limits=False,
+            prune_high_throughput=False,
+            reason="Target physical drop is within standard IEEE 802.3 specification (<=110m).",
+        )
 
     # -------------------------------------------------------------------------
     # 2. mDNS / DNS-SD Civic Location TXT Record Harvesting
@@ -526,7 +541,7 @@ class AdvancedSpatialProber:
         cls,
         circuit_id: Union[bytes, str, None],
         remote_id: Union[bytes, str, None]
-    ) -> Dict[str, Any]:
+    ) -> DhcpOption82PinResult:
         """
         Parses DHCP Option 82 Sub-options 1 (Agent Circuit ID) and 2 (Agent Remote ID).
         Extracts switch chassis MAC, slot/module, port number, VLAN ID, and generates
@@ -613,7 +628,7 @@ class AdvancedSpatialProber:
             pin_parts.append(f"(VLAN {result['vlan_id']})")
 
         result["switch_pin"] = " ".join(pin_parts)
-        return result
+        return DhcpOption82PinResult(**result)
 
     @staticmethod
     def _parse_circuit_id_text(text: str, result: Dict[str, Any]) -> None:

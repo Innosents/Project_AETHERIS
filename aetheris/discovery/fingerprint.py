@@ -4,9 +4,23 @@ Fuses multi-attribute evidence comprising open transport ports, protocol banner 
 industrial automation controllers, enterprise VoIP infrastructure, and generic workstations through prioritized heuristic rulesets.
 """
 
-import re
+from __future__ import annotations
 
-def fingerprint_device(ip: str, mac: str, open_ports: list, banners: dict, services: list) -> dict:
+import re
+from typing import Any, Dict, List, Optional, Union
+
+from aetheris.core.ports.fingerprint_port import (
+    DeviceFingerprintPort,
+    DeviceFingerprintRecord,
+    InferredOsProfileRecord,
+    PassiveStackStoragePort,
+    _MappingCompatibleModel,
+)
+
+
+def fingerprint_device(
+    ip: str, mac: str, open_ports: list, banners: dict, services: list
+) -> DeviceFingerprintRecord:
     """
     Analyzes port patterns and banner signatures to accurately classify hardware.
     Optimized to eliminate nested classification overrides.
@@ -343,27 +357,25 @@ def fingerprint_device(ip: str, mac: str, open_ports: list, banners: dict, servi
         vendor = "Amazon"
         model = "Amazon Fire TV Device"
 
-    result = {
-        "ip": ip,
-        "mac": mac,
-        "vendor": vendor,
-        "type": device_type,
-        "model": model,
-        "open_ports": open_ports,
-        "banners": banners,
-        "services": services,
-        "discovery_method": "heuristic_dna_fingerprint",
-        "hw_vendor": vendor if mac and mac != "00:00:00:00:00:00" else None
-    }
-    return result
+    return DeviceFingerprintRecord(
+        ip=ip,
+        mac=mac,
+        vendor=vendor,
+        type=device_type,
+        model=model,
+        open_ports=open_ports,
+        banners=banners,
+        services=services,
+        discovery_method="heuristic_dna_fingerprint",
+        hw_vendor=vendor if mac and mac != "00:00:00:00:00:00" else None,
+    )
 
 
-import sqlite3
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+import sqlite3
 
 
-class PassiveStackClassifier:
+class PassiveStackClassifier(PassiveStackStoragePort):
     """
     Passive & Active OS / TCP Stack Classifier (Pillar 1/2 Integration).
     Sniffs TCP SYN/ACK signatures and DHCP Option 55 parameter request lists.
@@ -554,29 +566,36 @@ class PassiveStackClassifier:
             "evidence": f"Embedded Linux STB signature: TTL={ttl} Win={window_size} Opt55={opt55_str}"
         }
 
-    def classify_target(self, ip: str, mac: Optional[str] = None) -> Dict[str, Any]:
+    def classify_target(self, ip: str, mac: Optional[str] = None) -> InferredOsProfileRecord:
         """
         Classifies target endpoint and extracts OS profile.
         """
         if ip in self.KNOWN_ENDPOINT_TELEMETRY:
-            known = dict(self.KNOWN_ENDPOINT_TELEMETRY[ip])
-            if mac:
-                known["mac"] = mac
-            return known
+            known = self.KNOWN_ENDPOINT_TELEMETRY[ip]
+            return InferredOsProfileRecord(
+                ip=ip,
+                mac=mac or known.get("mac", "00:00:00:00:00:00"),
+                os_profile=known["os_profile"],
+                confidence=known.get("confidence", 95.0),
+                synack_ttl=known.get("synack_ttl", 64),
+                window_size=known.get("window_size", 14600),
+                option55=known.get("option55", ""),
+                evidence=known.get("evidence", "")
+            )
 
         inferred = self.infer_os_profile(ttl=64, window_size=14600, extra_hints="endpoint")
-        return {
-            "ip": ip,
-            "mac": mac or "00:00:00:00:00:00",
-            "os_profile": inferred["os_profile"],
-            "synack_ttl": 64,
-            "window_size": 14600,
-            "option55": "",
-            "confidence": inferred["confidence"],
-            "evidence": inferred["evidence"]
-        }
+        return InferredOsProfileRecord(
+            ip=ip,
+            mac=mac or "00:00:00:00:00:00",
+            os_profile=inferred["os_profile"],
+            synack_ttl=64,
+            window_size=14600,
+            option55="",
+            confidence=inferred["confidence"],
+            evidence=inferred["evidence"]
+        )
 
-    def classify_and_save(self, ips: List[str]) -> Dict[str, Dict[str, Any]]:
+    def classify_and_save(self, ips: List[str]) -> Dict[str, InferredOsProfileRecord]:
         results = {}
         for ip in ips:
             res = self.classify_target(ip)
@@ -584,7 +603,11 @@ class PassiveStackClassifier:
         self.save_to_ledger(results)
         return results
 
-    def save_to_ledger(self, profiles: Dict[str, Dict[str, Any]]) -> None:
+    def save_profiles(self, profiles: Dict[str, InferredOsProfileRecord]) -> None:
+        """Persists profile records to the ledger adhering to PassiveStackStoragePort."""
+        self.save_to_ledger(profiles)
+
+    def save_to_ledger(self, profiles: Dict[str, Any]) -> None:
         """Persists inferred OS profiles into spatial_ledger.db."""
         try:
             with sqlite3.connect(str(self.db_path), timeout=5.0) as conn:
@@ -611,7 +634,7 @@ class PassiveStackClassifier:
                     """, (
                         ip,
                         data.get("mac", ""),
-                        data["os_profile"],
+                        data.get("os_profile", "UNKNOWN"),
                         data.get("confidence", 95.0),
                         data.get("synack_ttl", 64),
                         data.get("window_size", 14600),
@@ -621,3 +644,36 @@ class PassiveStackClassifier:
                 conn.commit()
         except Exception:
             pass
+
+
+class DeviceFingerprinter(DeviceFingerprintPort):
+    """Hexagonal adapter coordinator for device fingerprinting."""
+
+    def fingerprint(
+        self,
+        ip: str,
+        mac: str,
+        open_ports: List[int],
+        banners: Dict[str, Any],
+        services: List[str]
+    ) -> DeviceFingerprintRecord:
+        return fingerprint_device(
+            ip=ip,
+            mac=mac,
+            open_ports=open_ports,
+            banners=banners,
+            services=services
+        )
+
+
+__all__ = [
+    "fingerprint_device",
+    "DeviceFingerprinter",
+    "PassiveStackClassifier",
+    "DeviceFingerprintPort",
+    "PassiveStackStoragePort",
+    "DeviceFingerprintRecord",
+    "InferredOsProfileRecord",
+    "_MappingCompatibleModel",
+]
+

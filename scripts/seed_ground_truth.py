@@ -26,10 +26,12 @@ ground_truth_nodes = [
     ("192.168.1.80", "Media Set-Top Box", 25.50, "Cat5e_Copper"),
     ("D4:B9:2F:21:EC:BD", "Media Set-Top Box (MAC)", 25.50, "Cat5e_Copper"),
     ("SET_TOP_BOX", "Media Set-Top Box", 25.50, "Cat5e_Copper"),
-    ("WIFI_PLUS", "Wi-Fi Plus Extender", 27.00, "Cat6_Copper"),
     ("192.168.1.65", "Samsung Smart TV", 28.52, "Cat5e_Copper"),
     ("BC:7E:8B:0D:82:CA", "Samsung Smart TV (MAC)", 28.52, "Cat5e_Copper"),
-    ("ONT_TO_ISP", "WAN SFP-to-Gateway Riser", 34.00, "Cat5_Copper")
+    ("ONT_TO_ISP", "WAN SFP-to-Gateway Riser", 34.00, "Cat5_Copper"),
+    
+    # Ensure the device is identified as a bridge/AP archetype:
+    ('WIFI_PLUS', 'Wi-Fi Plus Extender', 27.0, 'Cat6_Copper')
 ]
 
 cur.executemany("""

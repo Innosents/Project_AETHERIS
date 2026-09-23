@@ -14,6 +14,10 @@ from typing import Dict, List, Any, Optional
 from aetheris.core.ports.spatial_bayesian_port import (
     BayesianFusionPort,
     SpatialSolverPort,
+    ArchetypeInferenceResult,
+    PortProfileRecord,
+    HopParametersRecord,
+    _MappingCompatibleModel,
 )
 from aetheris.core.topologies import Endpoint, Unmanaged_Switch
 
@@ -38,6 +42,7 @@ RECALIBRATED_KERNEL_BASELINES_US: Dict[str, float] = {
 }
 
 class BayesianEvidenceFusion(BayesianFusionPort):
+    __test__ = False
     ARCHETYPES = [
         "WINDOWS_HOST", "VOIP_TELEPHONY", "INDUSTRIAL_OT",
         "CCTV_VIDEO", "NETWORK_INFRASTRUCTURE", "LINUX_SERVER",
@@ -376,7 +381,7 @@ class BayesianEvidenceFusion(BayesianFusionPort):
         cls,
         observed_keys: List[str],
         tau_ns_samples: List[float]
-    ) -> Dict[str, Any]:
+    ) -> ArchetypeInferenceResult:
         """
         Evaluates physical kernel latency bounds based on provided nanosecond flight times
         and fuses with Bayesian likelihoods. Zero Redis dependency.
@@ -393,14 +398,14 @@ class BayesianEvidenceFusion(BayesianFusionPort):
 
         posterior = cls.fuse_evidence(evidence)
         top_arch = max(posterior.items(), key=lambda x: x[1])[0]
-        return {
-            "archetype": top_arch,
-            "confidence": posterior[top_arch],
-            "posterior": posterior,
-            "raw_tau_ns_samples": tau_ns_samples,
-            "min_tau_ns": float(np.min(tau_ns_samples)) if tau_ns_samples else 0.0,
-            "calibrated_kernel_turnaround_us": cls.get_calibrated_kernel_turnaround_us(top_arch)
-        }
+        return ArchetypeInferenceResult(
+            archetype=top_arch,
+            confidence=round(posterior[top_arch], 4),
+            posterior=posterior,
+            raw_tau_ns_samples=tau_ns_samples,
+            min_tau_ns=float(np.min(tau_ns_samples)) if tau_ns_samples else 0.0,
+            calibrated_kernel_turnaround_us=cls.get_calibrated_kernel_turnaround_us(top_arch)
+        )
 
     @classmethod
     def recalibrate_kernel_baselines(
@@ -462,18 +467,18 @@ class BayesianEvidenceFusion(BayesianFusionPort):
         return {arch: prob / total_mass for arch, prob in raw_probs.items()}
 
 
-def calculate_port_profile(port_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def calculate_port_profile(port_data: Optional[Dict[str, Any]] = None) -> PortProfileRecord:
     """
     Calculates deterministic delays based on provided port configuration data.
     """
     if not port_data:
-        return {
-            "port_id": "Unknown",
-            "link_speed_mbps": 1000,
-            "connection_type": "Ethernet",
-            "t_hop_ns": 18.5,
-            "is_wireless": False
-        }
+        return PortProfileRecord(
+            port_id="Unknown",
+            link_speed_mbps=1000,
+            connection_type="Ethernet",
+            t_hop_ns=18.5,
+            is_wireless=False
+        )
 
     port_id = port_data.get("port_id", "Unknown")
     speed = port_data.get("link_speed_mbps", 1000)
@@ -488,33 +493,34 @@ def calculate_port_profile(port_data: Optional[Dict[str, Any]] = None) -> Dict[s
     else:
         t_hop_ns = 0.0
 
-    return {
-        "port_id": port_id,
-        "link_speed_mbps": speed if speed else 1000,
-        "connection_type": conn_type,
-        "t_hop_ns": t_hop_ns,
-        "is_wireless": is_wireless
-    }
+    return PortProfileRecord(
+        port_id=port_id,
+        link_speed_mbps=speed if speed else 1000,
+        connection_type=conn_type,
+        t_hop_ns=t_hop_ns,
+        is_wireless=is_wireless
+    )
 
 def compute_residual_flight_time(rtt_observed_ns: float, port_data: Dict[str, Any], probe_bytes: int = 64) -> float:
     profile = calculate_port_profile(port_data)
 
-    if profile["is_wireless"]:
+    if profile.is_wireless:
         return rtt_observed_ns
 
-    speed_bps = profile["link_speed_mbps"] * 1e6
+    speed_bps = profile.link_speed_mbps * 1e6
     t_tx_ns = ((probe_bytes * 8) / speed_bps) * 1e9
-    t_deterministic = t_tx_ns + profile["t_hop_ns"]
+    t_deterministic = t_tx_ns + profile.t_hop_ns
 
     return max(0.0, rtt_observed_ns - t_deterministic)
 
-def get_calibrated_hop_parameters(delta_t_us: float) -> dict:
+def get_calibrated_hop_parameters(delta_t_us: float) -> HopParametersRecord:
     if delta_t_us <= 90.0:
-        return {"tier": "L2_PRIMARY_SWITCH", "hop_delay_ns": 18.5, "effective_rate_mbps": 1000, "sigma_jitter_ns": 2.5}
-    return {"tier": "L3_CASCADED_BRIDGE", "hop_delay_ns": 125000.0, "effective_rate_mbps": 100, "sigma_jitter_ns": 25.0}
+        return HopParametersRecord(tier="L2_PRIMARY_SWITCH", hop_delay_ns=18.5, effective_rate_mbps=1000, sigma_jitter_ns=2.5)
+    return HopParametersRecord(tier="L3_CASCADED_BRIDGE", hop_delay_ns=125000.0, effective_rate_mbps=100, sigma_jitter_ns=25.0)
 
 
 class BayesianSpatialSolver(SpatialSolverPort):
+    __test__ = False
     def __init__(
         self,
         chassis_matrix: Optional[Dict[str, Any]] = None,
@@ -529,6 +535,29 @@ class BayesianSpatialSolver(SpatialSolverPort):
         self.ttl_matrix = ttl_matrix or self.fused_matrix.get("ttl_matrix", {})
         self.multicast_matrix = multicast_matrix or self.fused_matrix.get("multicast_matrix", {})
         self.graph = nx.DiGraph()
+
+    def ingest_telemetry(
+        self,
+        chassis_matrix: Optional[Dict[str, Any]] = None,
+        stp_matrix: Optional[Dict[str, Any]] = None,
+        ttl_matrix: Optional[Dict[str, Any]] = None,
+        multicast_matrix: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Ingests raw multi-layer telemetry matrices into the solver."""
+        if chassis_matrix is not None:
+            self.chassis_matrix = chassis_matrix
+        if stp_matrix is not None:
+            self.stp_matrix = stp_matrix
+        if ttl_matrix is not None:
+            self.ttl_matrix = ttl_matrix
+        if multicast_matrix is not None:
+            self.multicast_matrix = multicast_matrix
+        self.fused_matrix = {
+            "chassis_intelligence": self.chassis_matrix,
+            "spanning_tree_intelligence": self.stp_matrix,
+            "l3_hop_intelligence": self.ttl_matrix,
+            "multicast_identity": self.multicast_matrix,
+        }
 
     def project_topology(self, fused_matrix: Optional[Dict[str, Any]] = None) -> nx.DiGraph:
         """
@@ -554,8 +583,18 @@ class BayesianSpatialSolver(SpatialSolverPort):
         # Check if any endpoints are cascaded through an unmanaged switch (hops > 1 or root_path_cost >= 19)
         has_unmanaged = False
         for mac in all_macs:
-            hops = l3_intel.get(mac, 1)
-            cost = stp_intel.get(mac, {}).get("root_path_cost", 0)
+            raw_hop = l3_intel.get(mac, 1)
+            if isinstance(raw_hop, dict):
+                hops = raw_hop.get("hops") or raw_hop.get("ttl_hops") or raw_hop.get("hop_count") or 1
+            elif isinstance(raw_hop, (int, float)):
+                hops = int(raw_hop)
+            else:
+                hops = 1
+
+            raw_stp = stp_intel.get(mac, {})
+            cost = raw_stp.get("root_path_cost", 0) if isinstance(raw_stp, dict) else 0
+            if not isinstance(cost, (int, float)):
+                cost = 0
             if hops > 1 or cost >= 19:
                 has_unmanaged = True
                 break
@@ -565,14 +604,23 @@ class BayesianSpatialSolver(SpatialSolverPort):
             graph.add_edge("Core_Distribution_Switch", "Unmanaged_Switch", weight=19.0)
 
         for mac in sorted(all_macs):
-            mc_data = multicast_intel.get(mac, {})
-            chassis_data = chassis_intel.get(mac, {})
-            stp_data = stp_intel.get(mac, {})
-            hops = l3_intel.get(mac, 1)
+            mc_data = multicast_intel.get(mac, {}) if isinstance(multicast_intel.get(mac), dict) else {}
+            chassis_data = chassis_intel.get(mac, {}) if isinstance(chassis_intel.get(mac), dict) else {}
+            stp_data = stp_intel.get(mac, {}) if isinstance(stp_intel.get(mac), dict) else {}
+            raw_hop = l3_intel.get(mac, 1)
+            if isinstance(raw_hop, dict):
+                hops = raw_hop.get("hops") or raw_hop.get("ttl_hops") or raw_hop.get("hop_count") or 1
+            elif isinstance(raw_hop, (int, float)):
+                hops = int(raw_hop)
+            else:
+                hops = 1
+
             cost = stp_data.get("root_path_cost", stp_data.get("pathcost", 1))
+            if not isinstance(cost, (int, float)):
+                cost = 1
 
             # Identity string resolution
-            hostname = chassis_data.get("tlvs", {}).get("hostname")
+            hostname = chassis_data.get("tlvs", {}).get("hostname") if isinstance(chassis_data.get("tlvs"), dict) else None
             if hostname:
                 ident_str = hostname
             else:

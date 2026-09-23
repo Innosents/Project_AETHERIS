@@ -74,3 +74,8 @@ desktop.ini
 .vscode/*
 !.vscode/settings.json
 !.vscode/launch.json
+# Local LLM Models and Weights
+*.gguf
+*.bin
+*.onnx
+aetheris/models/

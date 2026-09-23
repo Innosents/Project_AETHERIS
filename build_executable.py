@@ -1,6 +1,6 @@
 """
-GraphPath Standalone Windows Executable (.exe) Automated Build Script
-Builds a standalone, zero-dependency GraphPath.exe utilizing PyInstaller.
+Aetheris Standalone Windows Executable (.exe) Automated Build Script
+Builds a standalone, zero-dependency Aetheris.exe utilizing PyInstaller.
 """
 
 import os
@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 def build_executable():
     print("=" * 70)
-    print("  [BUILD] GRAPHPATH STANDALONE WINDOWS EXECUTABLE (.EXE)")
+    print("  [BUILD] AETHERIS STANDALONE WINDOWS EXECUTABLE (.EXE)")
     print("=" * 70)
 
     try:
@@ -25,22 +25,22 @@ def build_executable():
 
     build_dir = BASE_DIR / "build"
     dist_dir = BASE_DIR / "dist"
-    spec_file = BASE_DIR / "GraphPath.spec"
+    spec_file = BASE_DIR / "Aetheris.spec"
 
     if build_dir.exists():
         shutil.rmtree(build_dir, ignore_errors=True)
 
     if not spec_file.exists():
         print(f" [!] Spec file missing: {spec_file}")
-        print(" [*] Generating default PyInstaller spec for GraphPath...")
+        print(" [*] Generating default PyInstaller spec for Aetheris...")
         subprocess.check_call([
             sys.executable, "-m", "PyInstaller",
             "--noconfirm",
             "--onedir",
-            "--name", "GraphPath",
+            "--name", "Aetheris",
             "main.py"
         ])
-        spec_file = BASE_DIR / "GraphPath.spec"
+        spec_file = BASE_DIR / "Aetheris.spec"
 
     print(f" [+] Using PyInstaller spec: {spec_file}")
     cmd = [
@@ -57,9 +57,9 @@ def build_executable():
         print("\n [!] Build failed with compilation errors.")
         sys.exit(result.returncode)
 
-    exe_path = dist_dir / "GraphPath" / "GraphPath.exe"
+    exe_path = dist_dir / "Aetheris" / "Aetheris.exe"
     if not exe_path.exists():
-        exe_path = dist_dir / "GraphPath.exe"
+        exe_path = dist_dir / "Aetheris.exe"
 
     if exe_path.exists():
         size_mb = exe_path.stat().st_size / (1024 * 1024)

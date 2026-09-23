@@ -1,40 +1,48 @@
-{
-    "python.defaultInterpreterPath": "E:\\Project_AETHERIS\\.venv\\Scripts\\python.exe",
-    "python.terminal.activateEnvironment": true,
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}"
-    ],
-    "python.autoComplete.extraPaths": [
-        "${workspaceFolder}"
-    ],
-    "terminal.integrated.env.windows": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "antigravity.planning.stopAfterPlanning": true,
-    "git.ignoreLimitWarning": true,
-    "git.autorefresh": false,
-    "git.autofetch": false,
-    "git.openRepositoryInParentFolders": "never",
-    "git.repositoryScanMaxDepth": 2,
-    "files.watcherExclude": {
-        "**/.git/objects/**": true,
-        "**/.venv/**": true,
-        "**/build/**": true,
-        "**/dist/**": true,
-        "**/.pytest_cache/**": true,
-        "**/__pycache__/**": true,
-        "**/logs/**": true
-    },
-    "mcpServers": {
-        "aetheris-spatial": {
-            "command": "${workspaceFolder}/.venv/Scripts/python.exe",
-            "args": ["-m", "graphpath.mcp.spatial_server"],
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            }
-        }
-    }
+﻿{
+    "python.defaultInterpreterPath":  "E:\\Project_AETHERIS\\.venv\\Scripts\\python.exe",
+    "python.terminal.activateEnvironment":  true,
+    "python.analysis.extraPaths":  [
+                                       "${workspaceFolder}"
+                                   ],
+    "python.autoComplete.extraPaths":  [
+                                           "${workspaceFolder}"
+                                       ],
+    "terminal.integrated.env.windows":  {
+                                            "PYTHONPATH":  "${workspaceFolder}"
+                                        },
+    "terminal.integrated.env.linux":  {
+                                          "PYTHONPATH":  "${workspaceFolder}"
+                                      },
+    "antigravity.planning.stopAfterPlanning":  true,
+    "git.ignoreLimitWarning":  true,
+    "git.autorefresh":  false,
+    "git.autofetch":  false,
+    "git.openRepositoryInParentFolders":  "never",
+    "git.repositoryScanMaxDepth":  2,
+    "files.watcherExclude":  {
+                                 "**/.git/objects/**":  true,
+                                 "**/.venv/**":  true,
+                                 "**/build/**":  true,
+                                 "**/dist/**":  true,
+                                 "**/.pytest_cache/**":  true,
+                                 "**/__pycache__/**":  true,
+                                 "**/logs/**":  true
+                             },
+    "mcpServers":  {
+                       "aetheris-spatial":  {
+                                                "command":  "${workspaceFolder}/.venv/Scripts/python.exe",
+                                                "args":  [
+                                                             "-m",
+                                                             "aetheris.mcp.spatial_server"
+                                                         ],
+                                                "env":  {
+                                                            "PYTHONPATH":  "${workspaceFolder}"
+                                                        }
+                                            }
+                   },
+    "github.copilot.chat.codeGeneration.instructions":  [
+                                                            {
+                                                                "file":  ".github/copilot-instructions.md"
+                                                            }
+                                                        ]
 }

@@ -13,7 +13,18 @@ import socket
 import struct
 import urllib.request
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Set
+from typing import Dict, Any, List, Optional, Tuple, Set, Union
+
+from aetheris.core.ports.geolocation_engine_port import (
+    GeolocationEnginePort,
+    CivicLocationPort,
+    SpatialPathReasonerPort,
+    PublicGeoMetadata,
+    NormalizedCivicAddress,
+    PhysicalVectorResult,
+    SpatialPathSummary,
+    _MappingCompatibleModel,
+)
 
 try:
     from core.path_utils import get_data_dir
@@ -22,7 +33,7 @@ except ImportError:
         return Path(__file__).resolve().parent.parent
 
 
-class PublicGeoIpResolver:
+class PublicGeoIpResolver(GeolocationEnginePort):
     """Resolves and caches public WAN IP GPS coordinates, city, region, ISP, and ASN."""
 
     V_FIBER_KM_S: float = 200860.0  # Speed of light in optical fiber (~0.67c)
@@ -64,14 +75,15 @@ class PublicGeoIpResolver:
         return round(linear_rtt_ms * inflation_scalar, 3)
 
     @classmethod
-    def resolve_ip(cls, ip: str, force_refresh: bool = False) -> Dict[str, Any]:
+    def resolve_ip(cls, ip: str, force_refresh: bool = False) -> PublicGeoMetadata:
         """
         Resolves public IP metadata (coordinates, ASN, ISP, country) with in-memory caching.
         """
         if not ip:
-            return cls._get_fallback_location()
+            return PublicGeoMetadata(**cls._get_fallback_location())
         if not force_refresh and ip in cls._ip_cache:
-            return cls._ip_cache[ip]
+            cached = cls._ip_cache[ip]
+            return cached if isinstance(cached, PublicGeoMetadata) else PublicGeoMetadata(**cached)
 
         # For loopback / RFC 1918 / private IPs or offline mode, return fallback
         if (ip.startswith("127.") or ip.startswith("10.") or
@@ -80,8 +92,9 @@ class PublicGeoIpResolver:
             os.environ.get("AETHERIS_DISABLE_GEOIP") == "1"):
             fallback = dict(cls._get_fallback_location())
             fallback["public_ip"] = ip
-            cls._ip_cache[ip] = fallback
-            return fallback
+            rec = PublicGeoMetadata(**fallback)
+            cls._ip_cache[ip] = rec
+            return rec
 
         try:
             url = f"https://ip-api.com/json/{ip}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,query"
@@ -107,32 +120,34 @@ class PublicGeoIpResolver:
                             "asn": payload.get("as") or payload.get("org", "AS-Unknown"),
                             "source": "ip_geolocation_api"
                         }
-                        cls._ip_cache[ip] = res
-                        return res
+                        rec = PublicGeoMetadata(**res)
+                        cls._ip_cache[ip] = rec
+                        return rec
         except Exception:
             pass
 
         fallback = dict(cls._get_fallback_location())
         fallback["public_ip"] = ip
-        cls._ip_cache[ip] = fallback
-        return fallback
+        rec = PublicGeoMetadata(**fallback)
+        cls._ip_cache[ip] = rec
+        return rec
 
     @classmethod
     def get_cache_file_path(cls) -> Path:
         return Path(get_data_dir()) / "geoip_cache.json"
 
     @classmethod
-    def resolve(cls, force_refresh: bool = False) -> Dict[str, Any]:
+    def resolve(cls, force_refresh: bool = False) -> PublicGeoMetadata:
         """Queries public GeoIP metadata with disk and in-memory caching."""
         now = time.time()
         
         # 0. Check Offline Mode / Air-Gap Policy
         if os.environ.get("AETHERIS_OFFLINE") == "1" or os.environ.get("AETHERIS_DISABLE_GEOIP") == "1":
-            return cls._get_fallback_location()
+            return PublicGeoMetadata(**cls._get_fallback_location())
 
         # 1. In-Memory Cache Check
         if not force_refresh and cls._cached_result and (now - cls._last_lookup_time < cls._CACHE_TTL_SECONDS):
-            return cls._cached_result
+            return cls._cached_result if isinstance(cls._cached_result, PublicGeoMetadata) else PublicGeoMetadata(**cls._cached_result)
 
         # 2. Disk Cache Check
         cache_file = cls.get_cache_file_path()
@@ -141,16 +156,19 @@ class PublicGeoIpResolver:
                 with open(cache_file, "r", encoding="utf-8") as f:
                     cached = json.load(f)
                     if now - cached.get("timestamp", 0) < cls._CACHE_TTL_SECONDS:
-                        cls._cached_result = cached.get("data", {})
+                        raw_data = cached.get("data", {})
+                        rec = PublicGeoMetadata(**raw_data)
+                        cls._cached_result = rec
                         cls._last_lookup_time = cached.get("timestamp", now)
-                        return cls._cached_result
+                        return rec
             except Exception:
                 pass
 
         # 3. Live WAN Lookup (Encrypted HTTPS JSON endpoint with strict timeout)
         geo_data = cls._fetch_live_geoip()
         if geo_data:
-            cls._cached_result = geo_data
+            rec = PublicGeoMetadata(**geo_data)
+            cls._cached_result = rec
             cls._last_lookup_time = now
             try:
                 cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -158,10 +176,10 @@ class PublicGeoIpResolver:
                     json.dump({"timestamp": now, "data": geo_data}, f, indent=2)
             except Exception:
                 pass
-            return geo_data
+            return rec
 
         # 4. Fallback Default Location
-        return cls._get_fallback_location()
+        return PublicGeoMetadata(**cls._get_fallback_location())
 
     @classmethod
     def _fetch_live_geoip(cls) -> Optional[Dict[str, Any]]:
@@ -234,7 +252,7 @@ class PublicGeoIpResolver:
         }
 
 
-class LldpMedLocationDecoder:
+class LldpMedLocationDecoder(CivicLocationPort):
     """
     Decodes ANSI/TIA-1057 (LLDP-MED) Location Identification TLVs:
     - Format 1: Coordinate-based LCI (Latitude, Longitude, Altitude, Datum WGS84)
@@ -356,12 +374,15 @@ class LldpMedLocationDecoder:
         return "STANDARD"
 
     @classmethod
-    def normalize_civic_address(cls, raw_civic: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_civic_address(cls, raw_civic: Dict[str, Any]) -> NormalizedCivicAddress:
         """
-        Normalizes civic address attributes into a clean, typed civic vector dictionary.
+        Normalizes civic address attributes into a clean, typed civic vector record.
         """
+        if isinstance(raw_civic, NormalizedCivicAddress):
+            return raw_civic
+
         if not isinstance(raw_civic, dict):
-            return {}
+            return NormalizedCivicAddress()
 
         civic = raw_civic.get("civic_address", raw_civic) if isinstance(raw_civic.get("civic_address"), dict) else raw_civic
 
@@ -388,17 +409,17 @@ class LldpMedLocationDecoder:
         else:
             zone_type = cls.classify_zone(room)
 
-        return {
-            "building": building,
-            "floor": floor_clean,
-            "floor_raw": floor_raw,
-            "room": room,
-            "rack": rack,
-            "country": country,
-            "zone_type": zone_type,
-            "is_restricted": (zone_type == "RESTRICTED"),
-            "is_public": (zone_type == "PUBLIC")
-        }
+        return NormalizedCivicAddress(
+            building=building,
+            floor=floor_clean,
+            floor_raw=floor_raw,
+            room=room,
+            rack=rack,
+            country=country,
+            zone_type=zone_type,
+            is_restricted=(zone_type == "RESTRICTED"),
+            is_public=(zone_type == "PUBLIC")
+        )
 
     @classmethod
     def compute_physical_vector(
@@ -407,7 +428,7 @@ class LldpMedLocationDecoder:
         dst_civic: Dict[str, Any],
         latency_us: float = 0.0,
         byte_count: int = 0
-    ) -> Dict[str, Any]:
+    ) -> PhysicalVectorResult:
         """
         Computes the physical spatial vector between two normalized civic locations
         and evaluates spatial policy violations (tromboning and perimeter boundary breaches).
@@ -415,12 +436,12 @@ class LldpMedLocationDecoder:
         src_norm = cls.normalize_civic_address(src_civic)
         dst_norm = cls.normalize_civic_address(dst_civic)
 
-        src_bldg = src_norm.get("building", "")
-        dst_bldg = dst_norm.get("building", "")
-        src_floor = src_norm.get("floor", "")
-        dst_floor = dst_norm.get("floor", "")
-        src_room = src_norm.get("room", "")
-        dst_room = dst_norm.get("room", "")
+        src_bldg = src_norm.building
+        dst_bldg = dst_norm.building
+        src_floor = src_norm.floor
+        dst_floor = dst_norm.floor
+        src_room = src_norm.room
+        dst_room = dst_norm.room
 
         same_building = bool(src_bldg and dst_bldg and src_bldg.lower() == dst_bldg.lower())
         same_floor = bool(same_building and src_floor and dst_floor and src_floor == dst_floor)
@@ -438,24 +459,24 @@ class LldpMedLocationDecoder:
             flags.append("FLAG_CROSS_FLOOR_TROMBONING")
 
         # 2. Zone Boundary Violation: Restricted zone egressing directly to Public zone
-        if src_norm.get("is_restricted") and dst_norm.get("is_public"):
+        if src_norm.is_restricted and dst_norm.is_public:
             flags.append("FLAG_ZONE_BOUNDARY_VIOLATION")
 
-        return {
-            "spatial_path": spatial_path,
-            "src_civic": src_norm,
-            "dst_civic": dst_norm,
-            "same_building": same_building,
-            "same_floor": same_floor,
-            "same_room": same_room,
-            "latency_us": float(latency_us),
-            "byte_count": int(byte_count),
-            "flags": flags
-        }
+        return PhysicalVectorResult(
+            spatial_path=spatial_path,
+            src_civic=src_norm,
+            dst_civic=dst_norm,
+            same_building=same_building,
+            same_floor=same_floor,
+            same_room=same_room,
+            latency_us=float(latency_us),
+            byte_count=int(byte_count),
+            flags=flags
+        )
 
 
 
-class SpatialPathReasoner:
+class SpatialPathReasoner(SpatialPathReasonerPort):
     """
     Computes human-readable spatial connection paths and matches physical locations:
     [Device] -> [Wall Jack / BSSID] -> [Switch Port] -> [Patch Panel / Rack] -> [Gateway] -> [WAN Coordinates]
@@ -468,7 +489,7 @@ class SpatialPathReasoner:
         all_nodes: Dict[str, Dict[str, Any]],
         edges: List[Tuple[str, str, Dict[str, Any]]],
         macro_geo: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> SpatialPathSummary:
         dev_name = node_meta.get("label") or node_meta.get("hostname") or node_meta.get("model") or node_id
         dev_ip = node_meta.get("ip", node_id)
         
@@ -545,15 +566,15 @@ class SpatialPathReasoner:
 
         accuracy_meters = None if is_virtual_overlay else (5.0 if "wall_jack" in civic or "desk_or_station" in civic else (25.0 if coords else None))
 
-        return {
-            "macro_location": macro_geo,
-            "civic_location": civic,
-            "coordinates": coords,
-            "spatial_path_trail": path_steps,
-            "accuracy_estimate_meters": accuracy_meters,
-            "is_virtual_overlay": is_virtual_overlay,
-            "overlay_flags": list(overlay_flags)
-        }
+        return SpatialPathSummary(
+            macro_location=macro_geo,
+            civic_location=civic,
+            coordinates=coords,
+            spatial_path_trail=path_steps,
+            accuracy_estimate_meters=accuracy_meters,
+            is_virtual_overlay=is_virtual_overlay,
+            overlay_flags=list(overlay_flags)
+        )
 
 
 class GeolocationProtocolsLibrary:
@@ -685,3 +706,19 @@ class GeolocationProtocolsLibrary:
             if p["id"] == proto_id:
                 return p
         return None
+
+
+__all__ = [
+    "PublicGeoIpResolver",
+    "LldpMedLocationDecoder",
+    "SpatialPathReasoner",
+    "GeolocationProtocolsLibrary",
+    "GeolocationEnginePort",
+    "CivicLocationPort",
+    "SpatialPathReasonerPort",
+    "PublicGeoMetadata",
+    "NormalizedCivicAddress",
+    "PhysicalVectorResult",
+    "SpatialPathSummary",
+    "_MappingCompatibleModel",
+]

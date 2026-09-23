@@ -7,6 +7,14 @@ Supports multi-hop trunk links, inter-switch risers, and media-specific propagat
 
 import math
 from typing import Dict, Any, List, Optional
+from aetheris.core.ports.spatial_kalman_port import (
+    SpatialKalmanPort,
+    AnchorRecord,
+    TrunkLinkRecord,
+    PathTransitOverhead,
+    LinkStateEstimate,
+    _MappingCompatibleModel,
+)
 
 C_VACUUM_M_PER_US = 299.792458  # Speed of light in meters per microsecond
 
@@ -20,27 +28,34 @@ MEDIA_NVP_PRESETS = {
 }
 
 
-class SpatialKalmanEstimator:
+class SpatialKalmanEstimator(SpatialKalmanPort):
     def __init__(self, default_nvp: float = 0.69, default_asic_lat_us: float = 1.2):
         self.nvp = default_nvp
         self.var_nvp = 0.04 ** 2
         self.asic_latency_us = default_asic_lat_us
         self.var_asic = 0.02 ** 2
 
-        # Link store: link_id -> state dict
+        # Link store: link_id -> state dict or record
         self.links: Dict[str, Dict[str, Any]] = {}
-        # Trunk links: (sw_a, sw_b) -> state dict with physical propagation delay
+        # Trunk links: trunk_id -> state dict or record
         self.trunks: Dict[str, Dict[str, Any]] = {}
 
-    def register_anchor(self, link_id: str, true_distance_m: float, measurement_variance: float = 0.25) -> Dict[str, Any]:
+    def register_anchor(self, link_id: str, true_distance_m: float, measurement_variance: float = 0.25) -> AnchorRecord:
         """Ingests a ground-truth physical distance anchor."""
+        confidence = round(max(0.0, 100.0 * (1.0 - math.sqrt(measurement_variance) / max(1.0, true_distance_m))), 2)
+        rec = AnchorRecord(
+            distance=float(true_distance_m),
+            variance=float(measurement_variance),
+            is_anchor=True,
+            confidence_pct=confidence,
+        )
         self.links[link_id] = {
-            "distance": float(true_distance_m),
-            "variance": float(measurement_variance),
+            "distance": rec.distance,
+            "variance": rec.variance,
             "is_anchor": True,
-            "confidence_pct": round(max(0.0, 100.0 * (1.0 - math.sqrt(measurement_variance) / max(1.0, true_distance_m))), 2)
+            "confidence_pct": rec.confidence_pct,
         }
-        return self.links[link_id]
+        return rec
 
     def register_trunk_link(
         self,
@@ -49,7 +64,7 @@ class SpatialKalmanEstimator:
         media_type: str = "COPPER_CAT6A",
         asic_latency_us: Optional[float] = None,
         variance_m2: float = 0.10
-    ) -> Dict[str, Any]:
+    ) -> TrunkLinkRecord:
         """
         Registers an inter-switch backbone or riser trunk.
         Calculates one-way physical flight time and switch forwarding transit delay.
@@ -59,17 +74,25 @@ class SpatialKalmanEstimator:
         one_way_flight_us = length_m / v_prop
         hop_asic_us = asic_latency_us if asic_latency_us is not None else self.asic_latency_us
 
+        rec = TrunkLinkRecord(
+            length_m=float(length_m),
+            media_type=media_type,
+            nvp=float(nvp),
+            one_way_flight_us=float(one_way_flight_us),
+            asic_latency_us=float(hop_asic_us),
+            variance_m2=float(variance_m2),
+        )
         self.trunks[trunk_id] = {
-            "length_m": float(length_m),
-            "media_type": media_type,
-            "nvp": nvp,
-            "one_way_flight_us": one_way_flight_us,
-            "asic_latency_us": hop_asic_us,
-            "variance_m2": variance_m2
+            "length_m": rec.length_m,
+            "media_type": rec.media_type,
+            "nvp": rec.nvp,
+            "one_way_flight_us": rec.one_way_flight_us,
+            "asic_latency_us": rec.asic_latency_us,
+            "variance_m2": rec.variance_m2,
         }
-        return self.trunks[trunk_id]
+        return rec
 
-    def compute_path_transit_overhead(self, path_trunk_ids: List[str]) -> Dict[str, float]:
+    def compute_path_transit_overhead(self, path_trunk_ids: List[str]) -> PathTransitOverhead:
         """
         Aggregates round-trip flight and ASIC forwarding overhead across an ordered list of trunk hops.
         Each intermediate switch in the traversal contributes round-trip ASIC latency.
@@ -86,12 +109,12 @@ class SpatialKalmanEstimator:
             total_asic_rtt_us += 2.0 * trunk["asic_latency_us"]
             accumulated_variance += trunk["variance_m2"]
 
-        return {
-            "flight_rtt_us": total_flight_rtt_us,
-            "asic_rtt_us": total_asic_rtt_us,
-            "total_overhead_rtt_us": total_flight_rtt_us + total_asic_rtt_us,
-            "path_variance": accumulated_variance
-        }
+        return PathTransitOverhead(
+            flight_rtt_us=total_flight_rtt_us,
+            asic_rtt_us=total_asic_rtt_us,
+            total_overhead_rtt_us=total_flight_rtt_us + total_asic_rtt_us,
+            path_variance=accumulated_variance,
+        )
 
     def calibrate_hyperparameters_from_anchor(
         self,
@@ -109,7 +132,7 @@ class SpatialKalmanEstimator:
         path_overhead_us = 0.0
         if path_trunk_ids:
             overhead = self.compute_path_transit_overhead(path_trunk_ids)
-            path_overhead_us = overhead["total_overhead_rtt_us"]
+            path_overhead_us = overhead.total_overhead_rtt_us
 
         d_target = self.links[link_id]["distance"]
         total_d = prober_distance_m + d_target
@@ -136,7 +159,7 @@ class SpatialKalmanEstimator:
         measurement_jitter_us: float = 0.05,
         prober_distance_m: float = 2.0,
         path_trunk_ids: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    ) -> LinkStateEstimate:
         """
         Updates link distance estimate across single or multi-hop switch topologies.
         Deducts intermediate trunk flight time and transit ASIC latencies.
@@ -147,8 +170,8 @@ class SpatialKalmanEstimator:
         path_var_m2 = 0.0
         if path_trunk_ids:
             overhead = self.compute_path_transit_overhead(path_trunk_ids)
-            path_overhead_us = overhead["total_overhead_rtt_us"]
-            path_var_m2 = overhead["path_variance"]
+            path_overhead_us = overhead.total_overhead_rtt_us
+            path_var_m2 = overhead.path_variance
 
         # Net flight dedicated to prober run + target edge drop
         net_flight_us = max(0.005, observed_rtt_us - target_stack_latency_us - (2.0 * self.asic_latency_us) - path_overhead_us)
@@ -170,7 +193,13 @@ class SpatialKalmanEstimator:
             }
         else:
             if self.links[link_id]["is_anchor"]:
-                return self.links[link_id]
+                rec = LinkStateEstimate(
+                    distance=self.links[link_id]["distance"],
+                    variance=self.links[link_id]["variance"],
+                    is_anchor=True,
+                    confidence_pct=self.links[link_id]["confidence_pct"]
+                )
+                return rec
 
             prior_dist = self.links[link_id]["distance"]
             prior_var = self.links[link_id]["variance"]
@@ -190,4 +219,22 @@ class SpatialKalmanEstimator:
         confidence = round(max(5.0, min(99.0, 100.0 * rel_precision)), 2)
         self.links[link_id]["confidence_pct"] = confidence
 
-        return self.links[link_id]
+        return LinkStateEstimate(
+            distance=dist,
+            variance=var,
+            is_anchor=False,
+            confidence_pct=confidence
+        )
+
+
+__all__ = [
+    "SpatialKalmanEstimator",
+    "SpatialKalmanPort",
+    "AnchorRecord",
+    "TrunkLinkRecord",
+    "PathTransitOverhead",
+    "LinkStateEstimate",
+    "MEDIA_NVP_PRESETS",
+    "C_VACUUM_M_PER_US",
+    "_MappingCompatibleModel",
+]

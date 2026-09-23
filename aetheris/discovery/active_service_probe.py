@@ -2,6 +2,11 @@
 Project AETHERIS - Active Service Prober (mDNS, SSDP, NetBIOS, WSD)
 Elicits responses from otherwise silent mobile devices, laptops, routers,
 Smart TVs, and ISP TV Set-Top Boxes (STBs: ARRIS, Technicolor, Humax, Sagemcom, Roku, Apple TV, Fire TV).
+
+Phase 56 – Hexagonal Adapter:
+  All public probe methods now return ``DiscoveredServiceEndpoint`` or
+  ``StealthProbeSummary`` instances instead of raw ``Dict[str, Any]``.
+  The class satisfies ``ActiveServiceProbePort`` via structural typing.
 """
 
 import socket
@@ -14,21 +19,28 @@ import xml.etree.ElementTree as ET
 from typing import Dict, List, Any, Optional
 from loguru import logger
 
-class ActiveServiceProber:
+from aetheris.core.ports.active_service_probe_port import (
+    ActiveServiceProbePort,
+    DiscoveredServiceEndpoint,
+    StealthProbeSummary,
+)
+
+
+class ActiveServiceProber(ActiveServiceProbePort):
     def __init__(self, timeout: float = 1.0):
         self.timeout = timeout
 
     # =========================================================================
     # 1. mDNS Multicast Query (UDP 5353 -> 224.0.0.251)
     # =========================================================================
-    def probe_mdns(self) -> List[Dict[str, Any]]:
+    def probe_mdns(self) -> List[DiscoveredServiceEndpoint]:
         """
         Broadcasts mDNS queries for Mobile Devices, Laptops, Mesh Routers, Smart TVs,
         and ISP Set-Top Boxes (STBs).
         """
-        discovered = []
+        discovered: List[DiscoveredServiceEndpoint] = []
         mdns_group = ('224.0.0.251', 5353)
-        
+
         # Build mDNS PTR Queries for TV, STB, media, mobile, and laptop services
         services = [
             b"\x0b_googlecast\x04_tcp\x05local\x00",
@@ -72,9 +84,16 @@ class ActiveServiceProber:
                     ip = addr[0]
                     parsed = self._parse_mdns_payload(data)
                     if parsed:
-                        parsed["ip"] = ip
-                        parsed["source"] = "active_mdns"
-                        discovered.append(parsed)
+                        discovered.append(
+                            DiscoveredServiceEndpoint(
+                                ip=ip,
+                                source="active_mdns",
+                                **parsed,
+                            )
+                        )
+        except (PermissionError, OSError):
+            # Unsupported address family or insufficient privileges — return empty list
+            pass
         except Exception:
             pass
         finally:
@@ -86,7 +105,8 @@ class ActiveServiceProber:
 
         return discovered
 
-    def _parse_mdns_payload(self, data: bytes) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _parse_mdns_payload(data: bytes) -> Optional[Dict[str, Any]]:
         """Extracts text strings and model identifiers from mDNS response payload."""
         text_repr = data.decode("latin1", errors="ignore")
         lowered = text_repr.lower()
@@ -267,14 +287,14 @@ class ActiveServiceProber:
     # =========================================================================
     # 2. SSDP / UPnP M-SEARCH Probe (UDP 1900 -> 239.255.255.250)
     # =========================================================================
-    def probe_ssdp(self) -> List[Dict[str, Any]]:
+    def probe_ssdp(self) -> List[DiscoveredServiceEndpoint]:
         """
         Sends UPnP M-SEARCH multicast discovery to identify Smart TVs, ISP Set-Top Boxes,
         Gateway Routers, Wi-Fi Extenders, Mesh Nodes, and Laptops.
         """
-        discovered = []
+        discovered: List[DiscoveredServiceEndpoint] = []
         ssdp_target = ('239.255.255.250', 1900)
-        
+
         msearch_msg = (
             "M-SEARCH * HTTP/1.1\r\n"
             "HOST: 239.255.255.250:1900\r\n"
@@ -299,9 +319,16 @@ class ActiveServiceProber:
                     text = data.decode("utf-8", errors="ignore")
                     parsed = self._parse_ssdp_payload(text)
                     if parsed:
-                        parsed["ip"] = ip
-                        parsed["source"] = "active_ssdp"
-                        discovered.append(parsed)
+                        discovered.append(
+                            DiscoveredServiceEndpoint(
+                                ip=ip,
+                                source="active_ssdp",
+                                **parsed,
+                            )
+                        )
+        except (PermissionError, OSError):
+            # Unsupported address family or insufficient privileges — return empty list
+            pass
         except Exception:
             pass
         finally:
@@ -313,7 +340,8 @@ class ActiveServiceProber:
 
         return discovered
 
-    def _parse_ssdp_payload(self, text: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _parse_ssdp_payload(text: str) -> Optional[Dict[str, Any]]:
         lowered = text.lower()
         server_line = ""
         for line in text.splitlines():
@@ -455,7 +483,7 @@ class ActiveServiceProber:
     # =========================================================================
     # 3. NetBIOS Node Status Query (UDP 137)
     # =========================================================================
-    def probe_netbios(self, target_ip: str) -> Optional[Dict[str, Any]]:
+    def probe_netbios(self, target_ip: str) -> Optional[DiscoveredServiceEndpoint]:
         """
         Unicasts a NetBIOS Name Query to grab NetBIOS name and workstation/laptop role.
         """
@@ -481,11 +509,11 @@ class ActiveServiceProber:
                 if names:
                     primary_name = names[0]
                     lower_name = primary_name.lower()
-                    
+
                     dev_type = "workstation"
                     dev_model = "Windows Host"
                     dev_vendor = "Microsoft Corporation"
-                    
+
                     if "stb" in lower_name or "iptv" in lower_name or "box" in lower_name:
                         dev_type = "stb"
                         dev_model = "IPTV Set-Top Box"
@@ -505,14 +533,14 @@ class ActiveServiceProber:
                         else:
                             dev_model = "Windows Portable Laptop"
 
-                    return {
-                        "ip": target_ip,
-                        "hostname": primary_name,
-                        "vendor": dev_vendor,
-                        "type": dev_type,
-                        "model": dev_model,
-                        "source": "netbios_137"
-                    }
+                    return DiscoveredServiceEndpoint(
+                        ip=target_ip,
+                        hostname=primary_name,
+                        vendor=dev_vendor,
+                        type=dev_type,
+                        model=dev_model,
+                        source="netbios_137",
+                    )
         except Exception:
             pass
         finally:
@@ -526,7 +554,7 @@ class ActiveServiceProber:
     # =========================================================================
     # 4. Web Services on Devices (WSD / WS-Discovery Probe on UDP 3702)
     # =========================================================================
-    def probe_ws_discovery(self, target_ip: str) -> Optional[Dict[str, Any]]:
+    def probe_ws_discovery(self, target_ip: str) -> Optional[DiscoveredServiceEndpoint]:
         """
         Unicasts a WS-Discovery SOAP Probe to UDP 3702 to identify Windows 10/11 endpoints,
         smart devices, printers, and scanners that block standard TCP ports.
@@ -599,15 +627,15 @@ class ActiveServiceProber:
                 vendor = "Microsoft Corporation"
                 model = "Windows Endpoint"
 
-            return {
-                "ip": target_ip,
-                "vendor": vendor,
-                "type": dev_type,
-                "model": model,
-                "friendly_name": friendly_name,
-                "hostname": friendly_name,
-                "source": "ws_discovery_3702"
-            }
+            return DiscoveredServiceEndpoint(
+                ip=target_ip,
+                vendor=vendor,
+                type=dev_type,
+                model=model,
+                friendly_name=friendly_name,
+                hostname=friendly_name,
+                source="ws_discovery_3702",
+            )
         except Exception:
             pass
         finally:
@@ -621,7 +649,7 @@ class ActiveServiceProber:
     # =========================================================================
     # 5. Link-Local Multicast Name Resolution (LLMNR on UDP 5355)
     # =========================================================================
-    def probe_llmnr(self, target_ip: str) -> Optional[Dict[str, Any]]:
+    def probe_llmnr(self, target_ip: str) -> Optional[DiscoveredServiceEndpoint]:
         """
         Unicasts an LLMNR reverse PTR query to UDP 5355 for target_ip.
         """
@@ -652,11 +680,11 @@ class ActiveServiceProber:
                     break
 
             if hostname:
-                return {
-                    "ip": target_ip,
-                    "hostname": hostname,
-                    "source": "llmnr_5355"
-                }
+                return DiscoveredServiceEndpoint(
+                    ip=target_ip,
+                    hostname=hostname,
+                    source="llmnr_5355",
+                )
         except Exception:
             pass
         finally:
@@ -670,7 +698,7 @@ class ActiveServiceProber:
     # =========================================================================
     # 6. Intel AMT / vPro Out-of-Band Engine (TCP 16992 / 16993)
     # =========================================================================
-    def probe_intel_amt(self, target_ip: str) -> Optional[Dict[str, Any]]:
+    def probe_intel_amt(self, target_ip: str) -> Optional[DiscoveredServiceEndpoint]:
         """
         Probes Intel AMT web interface on TCP 16992 (HTTP) or 16993 (HTTPS).
         """
@@ -684,14 +712,14 @@ class ActiveServiceProber:
                     s.sendall(req)
                     resp = s.recv(1024).decode("latin1", errors="ignore")
                     if "intel" in resp.lower() or "amt" in resp.lower() or "active management" in resp.lower() or "realm=\"intel" in resp.lower():
-                        return {
-                            "ip": target_ip,
-                            "vendor": "Intel Corporation",
-                            "type": "workstation",
-                            "model": "Intel Core Enterprise PC (Intel AMT/vPro Active)",
-                            "os_version": "Intel ME/AMT Management Engine",
-                            "source": f"intel_amt_{port}"
-                        }
+                        return DiscoveredServiceEndpoint(
+                            ip=target_ip,
+                            vendor="Intel Corporation",
+                            type="workstation",
+                            model="Intel Core Enterprise PC (Intel AMT/vPro Active)",
+                            os_version="Intel ME/AMT Management Engine",
+                            source=f"intel_amt_{port}",
+                        )
             except Exception:
                 pass
             finally:
@@ -705,13 +733,19 @@ class ActiveServiceProber:
     # =========================================================================
     # 7. Comprehensive Stealth Endpoint Interrogator
     # =========================================================================
-    def probe_stealth_endpoint(self, target_ip: str) -> Dict[str, Any]:
+    def probe_stealth_endpoint(self, target_ip: str) -> StealthProbeSummary:
         """
         Executes all stealth variances concurrently (NetBIOS UDP 137, WSD UDP 3702,
         LLMNR UDP 5355, Intel AMT TCP 16992) to unmask hidden/stealth nodes.
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        summary = {"ip": target_ip, "banners": {}, "stealth_probes": {}}
+        from concurrent.futures import ThreadPoolExecutor
+        # Accumulate scalar winners here; stealth_probes stores serialised sub-results
+        _hostname: Optional[str] = None
+        _vendor: Optional[str] = None
+        _type: Optional[str] = None
+        _model: Optional[str] = None
+        _os_version: Optional[str] = None
+        stealth_probes: Dict[str, Any] = {}
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             fut_nb = executor.submit(self.probe_netbios, target_ip)
@@ -723,22 +757,32 @@ class ActiveServiceProber:
                 try:
                     res = fut.result(timeout=0.6)
                     if res:
-                        src = res.get("source", "probe")
-                        summary["stealth_probes"][src] = res
-                        if res.get("hostname") and not summary.get("hostname"):
-                            summary["hostname"] = res["hostname"]
-                        if res.get("vendor") and not summary.get("vendor"):
-                            summary["vendor"] = res["vendor"]
-                        if res.get("type") and not summary.get("type"):
-                            summary["type"] = res["type"]
-                        if res.get("model") and not summary.get("model"):
-                            summary["model"] = res["model"]
-                        if res.get("os_version") and not summary.get("os_version"):
-                            summary["os_version"] = res["os_version"]
+                        # res is now a DiscoveredServiceEndpoint — use attribute access
+                        src = res.source or "probe"
+                        stealth_probes[src] = res.model_dump()
+                        if res.hostname and not _hostname:
+                            _hostname = res.hostname
+                        if res.vendor and not _vendor:
+                            _vendor = res.vendor
+                        if res.type and not _type:
+                            _type = res.type
+                        if res.model and not _model:
+                            _model = res.model
+                        if res.os_version and not _os_version:
+                            _os_version = res.os_version
                 except Exception:
                     pass
 
-        return summary
+        return StealthProbeSummary(
+            ip=target_ip,
+            hostname=_hostname,
+            vendor=_vendor,
+            type=_type,
+            model=_model,
+            os_version=_os_version,
+            banners={},
+            stealth_probes=stealth_probes,
+        )
 
     # =========================================================================
     # 8. Composite Sweep: Probe all active services

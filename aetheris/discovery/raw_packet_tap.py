@@ -15,8 +15,15 @@ try:
 except (ImportError, ModuleNotFoundError):
     get_windows_if_list = None
 
+from aetheris.core.ports.raw_packet_tap_port import (
+    RawPacketTapPort,
+    DriverCalibrationSummary,
+    PulseBurstResult,
+    _MappingCompatibleModel,
+)
 
-class RawPacketTap:
+
+class RawPacketTap(RawPacketTapPort):
 
     def _resolve_interface(self, iface_str: str) -> str:
         # If it looks like an IP address, try to resolve to interface name
@@ -30,12 +37,13 @@ class RawPacketTap:
                 except Exception:
                     pass
         return iface_str
+
     def __init__(
         self,
         interface: Optional[str] = None,
         on_packet_received: Optional[Callable[[Any], None]] = None
     ):
-        self.interface = self._resolve_interface(interface or self._detect_default_interface())
+        self.interface = self._resolve_interface(interface or self._detect_default_interface() or "")
         self.on_packet_received = on_packet_received
         
         self._pending_probes: Dict[str, Dict[str, Any]] = {}
@@ -181,3 +189,12 @@ class RawPacketTap:
                 del self._pending_probes[probe_key]
 
         return samples
+
+
+__all__ = [
+    "RawPacketTap",
+    "RawPacketTapPort",
+    "DriverCalibrationSummary",
+    "PulseBurstResult",
+    "_MappingCompatibleModel",
+]

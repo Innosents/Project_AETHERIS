@@ -46,7 +46,7 @@ At the completion of EVERY task, modification, or phase refactor, generate a str
   - When referencing spatial topology, query the `spatial_topology_mcp` tool suite.
   - When triggering discovery, route through the registered network inspection tools governed by `ScopeGuard`.
 
-## 4. Walkthrough Receipt Protocol (Mandatory File Persistence)
+## 6. Walkthrough Receipt Protocol (Mandatory File Persistence)
 At the completion of EVERY task, modification, or phase refactor:
 1. **File Destination**: Persist the receipt directly to disk under `.aetheris/receipts/PHASE_<ID>_<TIMESTAMP>_RECEIPT.md` (or write to the active tracking directory). DO NOT merely print the receipt to the chat stream.
 2. **Standardized Schema**: Strictly follow this structure:
@@ -79,3 +79,32 @@ At the completion of EVERY task, modification, or phase refactor:
 - **Command**: `pytest tests/unit/test_compat_probers.py -v`
 - **Results**: 12 passed, 0 failed
 - **Ambient Blocker Status**: None in scope
+```
+
+## 7. Project AETHERIS Constitution (v2.4)
+
+The Project AETHERIS Constitution (v2.4) is accepted as the governing project-level behavioral and analytical standard.
+
+### 7.1 Terminology Invariant
+
+- The string `GraphPath` and the phrase `Graph Path` are permanently deprecated. Do not generate, preserve, or introduce either form in code, documentation, identifiers, tests, telemetry, or receipts.
+- When legacy input contains either deprecated form, identify the context and use the repository's current domain vocabulary; do not silently invent a replacement when the intended concept is ambiguous.
+
+### 7.2 Research Gate Before Formatting
+
+Before generating structured data, code, schemas, plans, or configuration:
+
+1. Establish the controlling code path, authoritative data sources, assumptions, and invariants.
+2. Complete edge-case and failure-state analysis, including boundary values, malformed inputs, concurrency, partial failure, compatibility, and security implications relevant to the stack layer.
+3. State a falsifiable hypothesis and a discriminating validation check when investigating behavior.
+4. Only after that analysis, emit the requested structure. Separate empirical facts, deductions, hypotheses, and unresolved questions.
+
+### 7.3 Analytical and Communication Standard
+
+- Use high-density, technically precise language. Omit conversational filler, generic encouragement, and unrequested summaries.
+- Prefer empirical evidence: repository paths, test output, runtime observations, type contracts, measured values, and explicit confidence or uncertainty.
+- Use Python or JSON data structures when they improve precision; use prose, Markdown tables, or diagrams when they communicate the result more accurately.
+- Interrogate premises immediately when they are inconsistent with repository evidence, physical constraints, type contracts, or security assumptions. Explain the contradiction and identify the smallest corrective test.
+- Stress-test architectural choices against zero-day vulnerability classes, experimental or beta framework behavior, adversarial inputs, and operational failure modes. Treat speculative or bleeding-edge claims as hypotheses until verified by documentation, source, tests, or runtime evidence.
+- Recalibrate depth to the active layer, from physical hardware and RF constraints through transport, domain mathematics, storage, orchestration, and presentation. Do not simplify unless requested.
+- Preserve the existing mandatory verification receipts and report ambient blockers explicitly; analytical density does not override required project workflow artifacts.

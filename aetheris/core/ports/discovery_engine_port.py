@@ -1,159 +1,123 @@
 """
-Project AETHERIS - Discovery Engine Hexagonal Port Contracts.
-Defines immutable/mapping-compatible Pydantic models and Protocol boundaries
-for active network sweeps, port interrogation, banner grabbing, and device fingerprinting.
+Project AETHERIS - Discovery Engine Port Interface
+Hexagonal Protocol defining active/passive discovery orchestration, Bayesian evidence fusion,
+and recursive Kalman spatial cable distance resolution.
+Strict zero-I/O boundary: Contains zero scapy, socket, or network transport imports.
 """
-
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Protocol, runtime_checkable, Optional, Dict, Any, List
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class _MappingCompatibleModel(BaseModel):
-    """Pydantic model providing transparent dictionary read/write surface."""
+class _MappingCompatibleModel(dict):
+    """Dual-mode structure supporting attribute lookups, dict access, CPython json.dumps, and frozen immutability."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        is_frozen = getattr(self.__class__, "_frozen", False) or getattr(self.__class__, "frozen", False)
+        if hasattr(self.__class__, "model_config"):
+            cfg = getattr(self.__class__, "model_config")
+            if isinstance(cfg, dict) and cfg.get("frozen"):
+                is_frozen = True
+            elif getattr(cfg, "frozen", False):
+                is_frozen = True
+        if hasattr(self.__class__, "Config"):
+            cfg_cls = getattr(self.__class__, "Config")
+            if getattr(cfg_cls, "frozen", False):
+                is_frozen = True
+        object.__setattr__(self, "_is_frozen", is_frozen)
 
-    model_config = ConfigDict(extra="allow")
+    def __getattribute__(self, item: str) -> Any:
+        try:
+            return self[item]
+        except (KeyError, TypeError):
+            pass
+        return super().__getattribute__(item)
 
-    def __getitem__(self, key: str) -> Any:
-        if key in self.__class__.model_fields:
-            return getattr(self, key)
-        extra = self.__pydantic_extra__ or {}
-        if key in extra:
-            return extra[key]
-        raise KeyError(key)
+    def __setattr__(self, item: str, value: Any) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        self[item] = value
 
-    def __setitem__(self, key: str, value: Any) -> None:
-        if key in self.__class__.model_fields:
-            setattr(self, key, value)
-        else:
-            extra = dict(self.__pydantic_extra__ or {})
-            extra[key] = value
-            object.__setattr__(self, "__pydantic_extra__", extra)
+    def __setitem__(self, item: str, value: Any) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        super().__setitem__(item, value)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        if key in self:
-            return self[key]
-        return default
+    def __delattr__(self, item: str) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        try:
+            del self[item]
+        except KeyError:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
 
-    def __contains__(self, key: str) -> bool:
-        if key in self.__class__.model_fields:
-            return getattr(self, key) is not None
-        extra = self.__pydantic_extra__ or {}
-        return key in extra
+    def __delitem__(self, item: str) -> None:
+        if getattr(self, "_is_frozen", False):
+            raise TypeError(f"'{self.__class__.__name__}' is immutable and frozen")
+        super().__delitem__(item)
 
-    def keys(self):
-        return self.model_dump().keys()
+    def get(self, item: str, default: Any = None) -> Any:
+        return super().get(item, default)
 
-    def items(self):
-        return self.model_dump().items()
+    def model_dump(self) -> Dict[str, Any]:
+        return dict(self)
 
-    def values(self):
-        return self.model_dump().values()
-
-
-class DiscoverySweepConfig(_MappingCompatibleModel):
-    """Configuration options governing an active discovery sweep."""
-
-    network_cidr: str = Field(default="192.168.1.0/24", description="Target IPv4 CIDR block")
-    ports: Optional[List[int]] = Field(default=None, description="Optional target TCP ports to inspect")
-    timeout: float = Field(default=2.0, ge=0.1, description="Sweep timeout in seconds")
-    max_workers: int = Field(default=3, ge=1, description="Concurrent sweep worker thread pool size")
-
-
-class DiscoveredDeviceNode(_MappingCompatibleModel):
-    """Normalized payload representing a discovered physical or virtual host."""
-
-    ip: str = Field(..., description="IPv4 or IPv6 address")
-    mac: str = Field(default="", description="Hardware MAC address")
-    hostname: str = Field(default="", description="Resolved host identifier")
-    vendor: str = Field(default="Unknown", description="Hardware vendor name")
-    type: str = Field(default="unknown", description="Categorized device archetype")
-    model: str = Field(default="Generic Endpoint", description="Specific hardware model string")
-    open_ports: List[int] = Field(default_factory=list, description="Verified open TCP ports")
-    banners: Dict[int, str] = Field(default_factory=dict, description="Captured L7 service banners by port")
-    services: List[str] = Field(default_factory=list, description="Identified application service names")
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Inferred classification confidence")
+    def dict(self) -> Dict[str, Any]:
+        return dict(self)
 
 
-class PortScanSummary(_MappingCompatibleModel):
-    """Summary of port interrogation on a single target IP."""
-
-    ip: str = Field(..., description="Scanned target IP address")
-    open_ports: List[int] = Field(default_factory=list, description="List of responsive open ports")
-    scan_status: str = Field(default="COMPLETED", description="Status token: COMPLETED, TIMEOUT, or FILTERED")
-    banners: Dict[int, str] = Field(default_factory=dict, description="Associated port service banners")
-
-
-class DiscoveryRunSummary(_MappingCompatibleModel):
-    """Telemetry report produced upon completion of a discovery sweep."""
-
-    network_cidr: str = Field(..., description="Target network CIDR block that was swept")
-    total_scanned: int = Field(default=0, ge=0, description="Total number of evaluated host IPs")
-    active_hosts: int = Field(default=0, ge=0, description="Number of responding reachable hosts")
-    nodes_registered: int = Field(default=0, ge=0, description="Number of nodes committed to topology graph")
-    duration_seconds: float = Field(default=0.0, ge=0.0, description="Elapsed execution time in seconds")
+class DiscoveryEngineConfig(_MappingCompatibleModel):
+    model_config = ConfigDict(frozen=True)
+    prober_lead_m: float = Field(default=2.0)
+    interface: Optional[str] = Field(default=None)
+    enable_tap: bool = Field(default=False)
+    default_nvp: float = Field(default=0.69)
+    default_asic_lat_us: float = Field(default=1.2)
 
 
-@runtime_checkable
-class NetworkScannerPort(Protocol):
-    """Outbound port abstracting active ping sweeps, ARP probes, port interrogation, and banners."""
-
-    def icmp_sweep(self, target_ips: List[str]) -> List[str]:
-        """Performs ICMP echo sweep across candidate IPs, returning reachable hosts."""
-        ...
-
-    def arp_scan(self, network_cidr: str) -> List[Dict[str, str]]:
-        """Executes Layer 2 ARP resolution mapping IP addresses to MACs."""
-        ...
-
-    def scan_ports(self, ip: str, ports: Optional[List[int]] = None) -> Tuple[List[int], str]:
-        """Probes TCP ports on target host, returning list of open ports and status."""
-        ...
-
-    def grab_banner(self, ip: str, port: int, timeout: float = 1.0) -> str:
-        """Retrieves raw service banner from open port."""
-        ...
-
-    def fingerprint_device(
-        self,
-        ip: str,
-        mac: str,
-        open_ports: List[int],
-        banners: Dict[int, str],
-        services: List[str],
-    ) -> Dict[str, Any]:
-        """Synthesizes device DNA dictionary from multi-signal observation."""
-        ...
-
-    def get_common_ports(self) -> List[int]:
-        """Returns baseline list of default discovery ports."""
-        ...
+class DiscoveredNodeOutcome(_MappingCompatibleModel):
+    model_config = ConfigDict(frozen=True)
+    node_id: str = Field(...)
+    parent_switch: str = Field(...)
+    archetype: str = Field(...)
+    spatial_state: Optional[Dict[str, Any]] = Field(default=None)
+    global_nvp: float = Field(default=0.69)
 
 
 @runtime_checkable
 class DiscoveryEnginePort(Protocol):
-    """Inbound domain port orchestrating active/passive sweeps and graph topology ingestion."""
+    """Hexagonal Protocol orchestrating physical network spatial discovery."""
 
-    def register_discovered_node(self, node_ip: str, telemetry: Dict[str, Any]) -> None:
-        """Safely mutates topology graph within a transactional boundary."""
-        ...
-
-    def run_basic_sweep(
+    def process_discovered_node(
         self,
-        network_cidr: str = "192.168.1.0/24",
-        ports: Optional[List[int]] = None,
-    ) -> Optional[DiscoveryRunSummary]:
-        """Executes active network matrix sweep, device fingerprinting, and registration."""
+        node_id: str,
+        observed_telemetry_keys: List[str],
+        rtt_samples_us: List[float],
+        is_anchor: bool = False,
+        known_distance_m: Optional[float] = None,
+        parent_switch_id: Optional[str] = None,
+        path_trunk_ids: Optional[List[str]] = None
+    ) -> DiscoveredNodeOutcome:
+        """Fuses Bayesian evidence and calibrates Kalman physical distance for an endpoint."""
         ...
 
-    def run_passive(self, execution_timeout: float = 2.0) -> None:
-        """Executes passive traffic sniffing and L2 frame interception."""
+    def register_switch_trunk(
+        self,
+        upstream_switch_id: str,
+        downstream_switch_id: str,
+        length_m: float,
+        media_type: str = "COPPER_CAT6A",
+        asic_latency_us: Optional[float] = None
+    ) -> str:
+        """Registers an inter-switch backbone riser trunk."""
         ...
 
-    def run_credentialed(self) -> None:
-        """Executes authenticated management crawling."""
-        ...
-
-    def run_adaptive(self) -> None:
-        """Executes adaptive discovery sweep adjustments."""
+    def register_switch_anchor(
+        self,
+        switch_id: str,
+        anchor_target_id: str,
+        true_distance_m: float,
+        measurement_variance: float = 0.25
+    ) -> None:
+        """Registers a ground-truth physical distance anchor."""
         ...
 

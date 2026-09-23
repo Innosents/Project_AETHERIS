@@ -1,14 +1,29 @@
 """
-Project AETHERIS - Topology Graph Store
+Project AETHERIS - Topology Graph Store Adapter
 Maintains nodes, physical link edges, and spatial distance state estimates.
+Conforms to GraphStorePort.
 """
 
 from typing import Dict, Any, List, Optional
 import json
 import networkx as nx
 
+from aetheris.core.ports.graph_store_port import (
+    GraphStorePort,
+    GraphNodeRecord,
+    GraphEdgeRecord,
+    CytoscapeElement,
+    GraphStoreExport,
+    _MappingCompatibleModel,
+)
 
-class GraphStore:
+
+class GraphStore(GraphStorePort):
+    """
+    In-memory NetworkX-backed topology graph store conforming to GraphStorePort.
+    """
+    __test__ = False
+
     def __init__(self):
         self._graph = nx.DiGraph()
 
@@ -162,3 +177,14 @@ class GraphStore:
         """Restores graph state from serialized JSON string."""
         data = json.loads(json_str)
         self._graph = nx.node_link_graph(data)
+
+
+__all__ = [
+    "GraphStore",
+    "GraphStorePort",
+    "GraphNodeRecord",
+    "GraphEdgeRecord",
+    "CytoscapeElement",
+    "GraphStoreExport",
+    "_MappingCompatibleModel",
+]

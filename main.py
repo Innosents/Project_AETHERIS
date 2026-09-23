@@ -1,7 +1,7 @@
 """
 Project AETHERIUS - Root Execution Wrapper
 """
-from graphpath.cli import main
+from aetheris.cli import main
 
 if __name__ == "__main__":
     main()

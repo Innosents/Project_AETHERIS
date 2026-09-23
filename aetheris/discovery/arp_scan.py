@@ -1,69 +1,117 @@
 """
-Project AETHERIS - Arp Scan
-Discovers active link-layer nodes across target CIDR boundaries through raw Ethernet broadcast ARP injection coupled with kernel neighbor cache interrogation. Normalizes IPv4-to-MAC hardware bindings
-into discrete graph adjacency nodes for Layer-2 topology baseline hydration.
+Project AETHERIS - ARP Scanner Adapter
+Discovers link-layer nodes through guarded Scapy ARP injection and OS neighbor
+cache interrogation while exposing validated port models to callers.
 """
 
-import subprocess
+from __future__ import annotations
+
+import ipaddress
 import re
-from typing import List, Dict
+import subprocess
+from typing import Dict, List, Optional
 
 from loguru import logger
 
-def arp_scan(network_cidr: str) -> List[Dict[str, str]]:
-    """
-    Performs a link-layer ARP discovery sweep over the target network CIDR boundary.
-    Combines Scapy L2 raw injection with native Windows OS ARP table extraction
-    to ensure 100% of local devices have their MAC addresses mapped.
-    """
-    print(f"[Tier 4 Scan] Initializing hardware mapping injection sweep over: {network_cidr}")
-    discovered: Dict[str, str] = {}
+from aetheris.core.ports.arp_scan_port import ArpDeviceRecord, ArpScanPort
 
-    # 1. Scapy Layer-2 Raw Injection (if available)
-    try:
-        from scapy.all import srp
-        from scapy.layers.l2 import ARP, Ether
-        pkt = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=network_cidr)
-        ans, _ = srp(pkt, timeout=1.5, verbose=False, inter=0.01)
-        for _, r in ans:
-            if r.psrc and r.hwsrc:
-                discovered[r.psrc] = r.hwsrc.upper().replace("-", ":")
-    except Exception as e:
-        print(f"[Tier 4 Scan] Scapy L2 injection bypassed: {e}")
 
-    # Defensive Scapy Layer-2 Wrapper Pattern
-    try:
-        from scapy.all import srp
-        from scapy.layers.l2 import ARP, Ether
-        # Execute raw socket injection logic
-        ans, _ = srp(pkt, timeout=1.5, verbose=False)
-    except (PermissionError, OSError) as e:
-        logger.warning(f"[Discovery Fallback] Raw packet injection restricted on host interface: {e}. Diverting to OS ARP table extraction.")
-        ans = [] # Trigger safe fallback vector
+class ArpScanner(ArpScanPort):
+    """Concrete adapter for active ARP discovery and OS ARP-table parsing."""
 
-    # 2. Native Windows OS ARP Table Interrogation (Guaranteed OS Link-Layer Table)
-    try:
-        import ipaddress
+    def scan(self, network_cidr: str) -> List[ArpDeviceRecord]:
+        """Run guarded active discovery, then merge the native ARP table."""
+        discovered: Dict[str, ArpDeviceRecord] = {}
+
         try:
-            target_net = ipaddress.ip_network(network_cidr, strict=False)
-        except Exception:
-            target_net = None
+            from scapy.all import srp
+            from scapy.layers.l2 import ARP, Ether
 
-        output = subprocess.check_output(["arp", "-a"], text=True, errors="ignore", timeout=2.0)
-        for line in output.splitlines():
-            match = re.search(r'([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\s+([0-9a-fA-F\-]{17}|[0-9a-fA-F\:]{17})\s+dynamic', line)
-            if match:
-                ip = match.group(1)
-                mac = match.group(2).replace("-", ":").upper()
-                try:
-                    ip_obj = ipaddress.ip_address(ip)
-                    if (target_net is None or ip_obj in target_net) and not ip_obj.is_multicast and not ip_obj.is_reserved and mac != "FF:FF:FF:FF:FF:FF":
-                        discovered[ip] = mac
-                except ValueError:
-                    pass
-    except Exception as e:
-        print(f"[Tier 4 Scan] Windows OS ARP table query notice: {e}")
+            packet = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=network_cidr)
+            answers, _ = srp(packet, timeout=1.5, verbose=False, inter=0.01)
+            for _, response in answers:
+                if response.psrc and response.hwsrc:
+                    mac = response.hwsrc.upper().replace("-", ":")
+                    discovered[response.psrc] = ArpDeviceRecord(
+                        ip=response.psrc,
+                        mac=mac,
+                        source="scapy_raw_arp",
+                    )
+        except (PermissionError, OSError) as exc:
+            logger.warning(
+                "Raw ARP injection unavailable; using the OS ARP table: {}", exc
+            )
+        except Exception as exc:
+            logger.warning(
+                "Scapy ARP discovery unavailable; using the OS ARP table: {}", exc
+            )
 
-    results = [{"ip": ip, "mac": mac} for ip, mac in discovered.items()]
-    print(f"[Tier 4 Scan] Successfully mapped {len(results)} remote assets via hardware ARP table.")
-    return results
+        try:
+            output = subprocess.check_output(
+                ["arp", "-a"],
+                text=True,
+                errors="ignore",
+                timeout=2.0,
+            )
+            for record in self.parse_arp_table_output(output, network_cidr):
+                discovered.setdefault(record.ip, record)
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning("OS ARP table query unavailable: {}", exc)
+
+        return list(discovered.values())
+
+    @staticmethod
+    def parse_arp_table_output(
+        raw_output: str,
+        target_cidr: Optional[str] = None,
+    ) -> List[ArpDeviceRecord]:
+        """Parse Windows ``arp -a`` output without invoking OS or network I/O."""
+        try:
+            target_network = (
+                ipaddress.ip_network(target_cidr, strict=False)
+                if target_cidr
+                else None
+            )
+        except ValueError:
+            target_network = None
+
+        records: List[ArpDeviceRecord] = []
+        seen_ips = set()
+        pattern = re.compile(
+            r"(?P<ip>\d+\.\d+\.\d+\.\d+)\s+"
+            r"(?P<mac>[0-9a-fA-F:-]{17})\s+dynamic",
+            re.IGNORECASE,
+        )
+
+        for line in raw_output.splitlines():
+            match = pattern.search(line)
+            if not match:
+                continue
+
+            ip = match.group("ip")
+            mac = match.group("mac").replace("-", ":").upper()
+            try:
+                ip_object = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+
+            if (
+                ip in seen_ips
+                or (target_network is not None and ip_object not in target_network)
+                or ip_object.is_multicast
+                or ip_object.is_reserved
+                or mac == "FF:FF:FF:FF:FF:FF"
+            ):
+                continue
+
+            seen_ips.add(ip)
+            records.append(
+                ArpDeviceRecord(ip=ip, mac=mac, source="os_arp_table")
+            )
+
+        return records
+
+
+def arp_scan(network_cidr: str) -> List[ArpDeviceRecord]:
+    """Backward-compatible functional alias backed by :class:`ArpScanner`."""
+    return ArpScanner().scan(network_cidr)

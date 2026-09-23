@@ -12,8 +12,14 @@ import select
 import ipaddress
 from typing import Dict, List, Any, Optional
 
+from aetheris.core.ports.edge_broadcast_discovery_port import (
+    EdgeBroadcastDiscoveryPort,
+    DiscoveredEdgeNode,
+    _MappingCompatibleModel,
+)
 
-class EdgeBroadcastEngine:
+
+class EdgeBroadcastEngine(EdgeBroadcastDiscoveryPort):
     """Dispatches targeted broadcast and multicast probes based on identified device contexts."""
 
     def __init__(self, timeout: float = 1.2):
@@ -24,7 +30,7 @@ class EdgeBroadcastEngine:
         device_type: str = "generic", 
         vendor: str = "generic", 
         target_subnet: str = "10.10.4.0/24"
-    ) -> List[Dict[str, Any]]:
+    ) -> List[DiscoveredEdgeNode]:
         """
         Executes targeted protocol broadcasts tailored to the identified device's category.
         Returns newly discovered responding edge nodes.
@@ -60,12 +66,30 @@ class EdgeBroadcastEngine:
         # 5. Always run universal SSDP & mDNS edge query
         discovered.extend(self._probe_universal_edge(bcast_ip))
 
-        # Deduplicate results by IP
-        unique_nodes = {}
+        # Deduplicate results by IP and convert to DiscoveredEdgeNode instances
+        unique_nodes: Dict[str, DiscoveredEdgeNode] = {}
         for item in discovered:
-            ip = item.get("ip")
-            if ip and ip not in unique_nodes:
-                unique_nodes[ip] = item
+            if isinstance(item, DiscoveredEdgeNode):
+                node = item
+            elif isinstance(item, dict):
+                ip = item.get("ip")
+                if not ip:
+                    continue
+                node = DiscoveredEdgeNode(
+                    ip=ip,
+                    type=item.get("type", "generic"),
+                    vendor=item.get("vendor", "generic"),
+                    model=item.get("model", "Network Endpoint"),
+                    protocol=item.get("protocol", "Broadcast"),
+                    hostname=item.get("hostname"),
+                    banner=item.get("banner"),
+                    open_ports=item.get("open_ports", []),
+                )
+            else:
+                continue
+
+            if node.ip not in unique_nodes:
+                unique_nodes[node.ip] = node
 
         return list(unique_nodes.values())
 
@@ -424,4 +448,12 @@ class EdgeBroadcastEngine:
             pass
 
         return results
+
+
+__all__ = [
+    "EdgeBroadcastEngine",
+    "EdgeBroadcastDiscoveryPort",
+    "DiscoveredEdgeNode",
+    "_MappingCompatibleModel",
+]
 

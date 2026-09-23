@@ -1,7 +1,4 @@
-"""
-Project AETHERIS - Bridge Forwarding Database (CAM Table) & Switchport Wire Mapper (Compatibility Shim)
-Re-exports the core enterprise BridgeFdbCrawler from aetheris.core.crawlers.bridge_fdb.
-"""
+"""Compatibility exports for the Bridge FDB crawler adapter."""
 
 from aetheris.core.crawlers.bridge_fdb import (
     BridgeFdbCrawler,

@@ -13,7 +13,13 @@ import struct
 import threading
 import time
 import ipaddress
-from typing import Dict, Any, List, Optional, Tuple, Callable, Set
+from typing import Dict, Any, List, Optional, Tuple, Callable, Set, Union
+from aetheris.core.ports.mirror_engine_port import (
+    MirrorEnginePort,
+    DissectedFlowRecord,
+    MirrorCaptureSummary,
+    _MappingCompatibleModel,
+)
 from aetheris.discovery.dpi_parser import DpiParser
 from aetheris.discovery.advanced_spatial_prober import AdvancedSpatialProber
 
@@ -313,7 +319,7 @@ class OtWireDissector:
         return None
 
 
-class SpanCaptureEngine:
+class SpanCaptureEngine(MirrorEnginePort):
     """
     Ingests mirrored SPAN / ERSPAN / TAP packets, extracts L2/L3/L4 headers,
     runs Deep Packet Inspection (DPI), and updates node discovery and traffic flows.
@@ -364,7 +370,7 @@ class SpanCaptureEngine:
         history.append(current_sample)
         return eval_res
 
-    def process_raw_frame(self, frame: bytes) -> Dict[str, Any]:
+    def process_raw_frame(self, frame: bytes) -> DissectedFlowRecord:
         """
         Decodes a raw Ethernet frame, handles 802.1Q tags, ERSPAN GRE decapsulation,
         extracts L3/L4 conversation flows, and runs DPI protocol inspection.
@@ -375,7 +381,7 @@ class SpanCaptureEngine:
         t_stats.bytes_captured += len(frame)
 
         if len(frame) < 14:
-            return {}
+            return DissectedFlowRecord()
 
         dst_mac = ":".join(f"{b:02X}" for b in frame[0:6])
         src_mac = ":".join(f"{b:02X}" for b in frame[6:12])
@@ -419,7 +425,7 @@ class SpanCaptureEngine:
                         "vlan_id": vlan_id,
                         "discovery_method": "mirrored_span_arp"
                     })
-                return flow_data
+                return DissectedFlowRecord(**flow_data)
 
         # 3. IPv4 Processing (EtherType 0x0800)
         elif ethertype == 0x0800 and len(payload) >= 20:
@@ -449,7 +455,7 @@ class SpanCaptureEngine:
                 src_port, dst_port, _, _, offset_flags = struct.unpack(">HHIIH", tcp_hdr[:14])
                 tcp_data_offset = ((offset_flags >> 12) & 0x0F) * 4
                 if tcp_data_offset < 20:
-                    return flow_data
+                    return DissectedFlowRecord(**flow_data)
                 app_payload = payload[ihl + tcp_data_offset:]
 
                 flow_data["proto"] = "TCP"
@@ -516,10 +522,11 @@ class SpanCaptureEngine:
                     # Deep Packet Inspection Fallback
                     dpi_res = DpiParser.parse_payload(app_payload, src_port, dst_port, "TCP")
                     if dpi_res:
+                        telemetry_data = dpi_res.model_dump(exclude_none=True) if hasattr(dpi_res, "model_dump") else dict(dpi_res)
                         if "telemetry" in flow_data and isinstance(flow_data["telemetry"], dict):
                             if "spatial_jitter" in flow_data["telemetry"]:
-                                dpi_res["spatial_jitter"] = flow_data["telemetry"]["spatial_jitter"]
-                        flow_data["telemetry"] = dpi_res
+                                telemetry_data["spatial_jitter"] = flow_data["telemetry"]["spatial_jitter"]
+                        flow_data["telemetry"] = telemetry_data
                         self._dispatch_telemetry(src_ip, src_mac, dst_ip, vlan_id, dpi_res)
 
             # UDP (Protocol 17)
@@ -548,7 +555,8 @@ class SpanCaptureEngine:
                     # Deep Packet Inspection Fallback
                     dpi_res = DpiParser.parse_payload(app_payload, src_port, dst_port, "UDP")
                     if dpi_res:
-                        flow_data["telemetry"] = dpi_res
+                        telemetry_data = dpi_res.model_dump(exclude_none=True) if hasattr(dpi_res, "model_dump") else dict(dpi_res)
+                        flow_data["telemetry"] = telemetry_data
                         self._dispatch_telemetry(src_ip, src_mac, dst_ip, vlan_id, dpi_res)
 
         # Record into TrafficMatrixTracker (Every flow including public WAN endpoints is tracked here)
@@ -594,7 +602,7 @@ class SpanCaptureEngine:
                 flow_data["proto"] = "STP"
                 self._dispatch_telemetry("", src_mac, "", vlan_id, stp_info)
 
-        return flow_data
+        return DissectedFlowRecord(**flow_data)
 
     def _dispatch_telemetry(self, src_ip: str, src_mac: str, dst_ip: str, vlan_id: Optional[int], dpi: Dict[str, Any]):
         """Transmits discovered host telemetry extracted from DPI streams to callback."""
@@ -882,14 +890,29 @@ class SpanCaptureEngine:
                 pass
             self._sniffer = None
 
-    def get_summary_stats(self) -> Dict[str, Any]:
+    def get_summary_stats(self) -> MirrorCaptureSummary:
         """Returns snapshot of current mirrored traffic statistics."""
-        return {
-                "packets_captured": self.stats["packets_captured"],
-                "bytes_captured": self.stats["bytes_captured"],
-                "vlans_discovered": sorted(list(self.stats["vlans_discovered"])),
-                "protocols_detected": dict(self.stats["protocols_detected"]),
-                "active_hosts_count": len(self.stats["active_hosts"]),
-                "ptp_hardware_timestamping": getattr(self, "ptp_capability", {}),
-            }
+        return MirrorCaptureSummary(
+            packets_captured=self.stats["packets_captured"],
+            bytes_captured=self.stats["bytes_captured"],
+            vlans_discovered=sorted(list(self.stats["vlans_discovered"])),
+            protocols_detected=dict(self.stats["protocols_detected"]),
+            active_hosts_count=len(self.stats["active_hosts"]),
+            ptp_hardware_timestamping=dict(getattr(self, "ptp_capability", {})),
+        )
+
+
+__all__ = [
+    "SpanCaptureEngine",
+    "MirrorEnginePort",
+    "DissectedFlowRecord",
+    "MirrorCaptureSummary",
+    "VlanTagExtractor",
+    "ErspanDecapsulator",
+    "OtWireDissector",
+    "ZeroLockStatsProxy",
+    "BoundedFlowWindowRing",
+    "_MappingCompatibleModel",
+]
+
 

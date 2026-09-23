@@ -35,7 +35,7 @@ class ShardedCivicCache:
     Partitioning eliminates mutex contention under concurrent packet ingestion across worker threads.
     """
 
-    def __init__(self, num_shards: int = 32, max_entries_per_shard: int = 1024):
+    def __init__(self, num_shards: int = 128, max_entries_per_shard: int = 1024):
         self.num_shards = num_shards
         self.max_entries_per_shard = max_entries_per_shard
         self._locks = [threading.Lock() for _ in range(num_shards)]
@@ -58,20 +58,28 @@ class ShardedCivicCache:
                 return dict(partition[ip])
             return None
 
-    def set(self, ip: str, civic: Dict[str, Any]) -> None:
+    def set(self, ip: str, civic: Any) -> None:
         """Stores or updates civic vector for given IP with LRU eviction under localized partition lock."""
-        if not ip or not isinstance(civic, dict):
+        if not ip or civic is None:
+            return
+        if hasattr(civic, "model_dump"):
+            payload = dict(civic.model_dump())
+        elif hasattr(civic, "dict"):
+            payload = dict(civic.dict())
+        elif isinstance(civic, dict):
+            payload = dict(civic)
+        else:
             return
         shard_idx = self._get_shard_idx(ip)
         with self._locks[shard_idx]:
             partition = self._partitions[shard_idx]
             if ip in partition:
                 partition.move_to_end(ip)
-                partition[ip] = dict(civic)
+                partition[ip] = payload
             else:
                 if len(partition) >= self.max_entries_per_shard:
                     partition.popitem(last=False)
-                partition[ip] = dict(civic)
+                partition[ip] = payload
 
     def clear(self) -> None:
         """Flushes all civic cache partitions."""
@@ -150,7 +158,7 @@ class TrafficMatrixTracker(TrafficMatrixPort):
     Enriched with 32-partition LRU lookaside civic address caching and physical spatial vector tracking.
     """
 
-    NUM_SHARDS: int = 32
+    NUM_SHARDS: int = 128
 
     def __init__(self, max_flows: int = 50000, flow_ttl_seconds: float = 3600.0):
         self.max_flows = max_flows
@@ -186,7 +194,7 @@ class TrafficMatrixTracker(TrafficMatrixPort):
 
     def _eviction_worker(self) -> None:
         """Background worker periodically trimming expired flows across shards."""
-        while not self._stop_eviction.wait(timeout=5.0):
+        while not self._stop_eviction.wait(timeout=30.0):
             cutoff = time.time() - self.flow_ttl_seconds
             for shard in self._shards:
                 with shard.lock:
@@ -270,14 +278,22 @@ class TrafficMatrixTracker(TrafficMatrixPort):
         # 1. Update / retrieve civic vectors via zero-lock sharded lookaside cache
         if src_civic and isinstance(src_civic, dict):
             if LldpMedLocationDecoder:
-                src_civic = LldpMedLocationDecoder.normalize_civic_address(src_civic)
+                try:
+                    raw_norm = LldpMedLocationDecoder.normalize_civic_address(src_civic)
+                    src_civic = raw_norm.model_dump() if hasattr(raw_norm, "model_dump") else (raw_norm.dict() if hasattr(raw_norm, "dict") else dict(raw_norm))
+                except Exception:
+                    src_civic = dict(src_civic)
             self._civic_cache.set(src_ip, src_civic)
         else:
             src_civic = self._civic_cache.get(src_ip)
 
         if dst_civic and isinstance(dst_civic, dict):
             if LldpMedLocationDecoder:
-                dst_civic = LldpMedLocationDecoder.normalize_civic_address(dst_civic)
+                try:
+                    raw_norm = LldpMedLocationDecoder.normalize_civic_address(dst_civic)
+                    dst_civic = raw_norm.model_dump() if hasattr(raw_norm, "model_dump") else (raw_norm.dict() if hasattr(raw_norm, "dict") else dict(raw_norm))
+                except Exception:
+                    dst_civic = dict(dst_civic)
             self._civic_cache.set(dst_ip, dst_civic)
         else:
             dst_civic = self._civic_cache.get(dst_ip)
@@ -286,13 +302,21 @@ class TrafficMatrixTracker(TrafficMatrixPort):
         physical_vector = None
         spatial_flags: List[str] = []
         if src_civic and dst_civic and LldpMedLocationDecoder:
-            physical_vector = LldpMedLocationDecoder.compute_physical_vector(
+            pv_raw = LldpMedLocationDecoder.compute_physical_vector(
                 src_civic=src_civic,
                 dst_civic=dst_civic,
                 latency_us=latency_us,
                 byte_count=byte_count
             )
-            spatial_flags = physical_vector.get("flags", [])
+            if hasattr(pv_raw, "model_dump"):
+                physical_vector = pv_raw.model_dump()
+            elif hasattr(pv_raw, "dict"):
+                physical_vector = pv_raw.dict()
+            elif isinstance(pv_raw, dict):
+                physical_vector = dict(pv_raw)
+            else:
+                physical_vector = pv_raw
+            spatial_flags = physical_vector.get("flags", []) if isinstance(physical_vector, dict) else []
 
         flow_key = (src_ip, dst_ip, port, proto)
         shard = self._get_shard(flow_key)
@@ -398,7 +422,13 @@ class TrafficMatrixTracker(TrafficMatrixPort):
             with shard.lock:
                 for flow in shard.flows.values():
                     if flow.get("physical_vector") is not None:
-                        results.append(dict(flow))
+                        item = dict(flow)
+                        pv = item.get("physical_vector")
+                        if hasattr(pv, "model_dump"):
+                            item["physical_vector"] = pv.model_dump()
+                        elif hasattr(pv, "dict"):
+                            item["physical_vector"] = pv.dict()
+                        results.append(item)
         return results
 
     def get_flagged_flows(self, flag_filter: Optional[str] = None) -> List[Dict[str, Any]]:

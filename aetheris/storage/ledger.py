@@ -2,7 +2,7 @@
 Project AETHERIS - Redis-Backed Asynchronous Graph & Telemetry Storage Ledger
 Eradicates all sqlite3 dependencies.
 Enforces O(1) temporal eviction via Redis Hashes (HSET) and epoch-scored Sorted Sets (ZADD).
-Implements connection pooling and pipelined batch execution.
+Implements connection pooling and pipelined batch execution conforming to LedgerPort.
 """
 
 import asyncio
@@ -11,14 +11,34 @@ import time
 from typing import Dict, Any, Tuple, List, Optional
 import redis
 
+from aetheris.core.ports.ledger_port import (
+    LedgerPort,
+    NodeTelemetryPayload,
+    EvictionSummary,
+    HydratedNode,
+    HydratedEdge,
+    HydrationStoreResult,
+    _MappingCompatibleModel,
+)
+
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 
-class AetherisLedger:
+def _safe_float(val: Any, default: float = 0.0) -> float:
+    if val is None or val == "None" or val == "":
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+class AetherisLedger(LedgerPort):
     """
     Sub-millisecond Redis storage ledger for spatial topology nodes and graph edges.
     Replaces disk-bound SQLite tables with in-memory Redis Hashes and Sorted Sets.
     """
+    __test__ = False
 
     def __init__(
         self,
@@ -88,9 +108,10 @@ class AetherisLedger:
                     node_id = getattr(payload, "node_id", "")
                     parent_switch_id = getattr(payload, "parent_switch_id", "")
                     edge_type = getattr(payload, "edge_type", "ETHERNET")
-                    distance_m = getattr(payload, "distance_m", 0.0)
-                    confidence_pct = getattr(payload, "confidence_pct", 0.0)
-                    tau_ns = getattr(payload, "tau_ns", distance_m * 4.9)
+                    distance_m = _safe_float(getattr(payload, "distance_m", 0.0), 0.0)
+                    confidence_pct = _safe_float(getattr(payload, "confidence_pct", 0.0), 0.0)
+                    raw_tau = getattr(payload, "tau_ns", None)
+                    tau_ns = _safe_float(raw_tau, distance_m * 4.9) if raw_tau is not None else (distance_m * 4.9)
 
                     # 1. Upsert Target Node Hash (HSET) & Temporal Index (ZADD)
                     node_key = f"aetheris:nodes:{node_id}"
@@ -149,8 +170,7 @@ class AetherisLedger:
 
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                # Suppress or log pipeline write exceptions
+            except Exception:
                 pass
 
     async def shutdown(self) -> None:
@@ -159,13 +179,13 @@ class AetherisLedger:
         if self._worker_task:
             await self._worker_task
 
-    async def hydrate_store(self) -> Tuple[List[dict], List[dict]]:
+    async def hydrate_store(self) -> HydrationStoreResult:
         """
         Hydrates topology nodes and edges using high-speed pipelined HGETALL queries.
-        Returns: (nodes, edges) in format required by visualizer graph store.
+        Returns: HydrationStoreResult supporting legacy tuple unpacking (nodes, edges).
         """
-        nodes: List[dict] = []
-        edges: List[dict] = []
+        hydrated_nodes: List[HydratedNode] = []
+        hydrated_edges: List[HydratedEdge] = []
 
         try:
             # 1. Retrieve all active node IDs from temporal sorted set
@@ -183,7 +203,7 @@ class AetherisLedger:
                         "label": n_rec.get("label", n_rec["node_id"]),
                         "mac": n_rec.get("mac", "N/A"),
                         "firmware": n_rec.get("firmware", "N/A"),
-                        "last_seen": float(n_rec.get("last_seen", 0.0))
+                        "last_seen": _safe_float(n_rec.get("last_seen"), 0.0)
                     }
                     if "props_json" in n_rec:
                         try:
@@ -191,10 +211,10 @@ class AetherisLedger:
                             props.update(extra)
                         except Exception:
                             pass
-                    nodes.append({
-                        "node_id": n_rec["node_id"],
-                        "props": props
-                    })
+                    hydrated_nodes.append(HydratedNode(
+                        node_id=n_rec["node_id"],
+                        props=props
+                    ))
 
             # 2. Retrieve all active edge IDs from temporal sorted set
             edge_ids = self.redis.zrange("aetheris:edges:temporal", 0, -1)
@@ -207,12 +227,15 @@ class AetherisLedger:
                 for e_rec in edge_records:
                     if not e_rec or "source_id" not in e_rec or "target_id" not in e_rec:
                         continue
+                    distance_m = _safe_float(e_rec.get("distance_m"), 0.0)
+                    tau_ns = _safe_float(e_rec.get("tau_ns"), distance_m * 4.9)
+                    confidence_pct = _safe_float(e_rec.get("confidence_pct"), 0.0)
                     props = {
                         "edge_type": e_rec.get("edge_type", "ETHERNET"),
                         "switchport": e_rec.get("switchport", "N/A"),
-                        "distance_m": float(e_rec.get("distance_m", 0.0)),
-                        "tau_ns": float(e_rec.get("tau_ns", 0.0)),
-                        "confidence_pct": float(e_rec.get("confidence_pct", 0.0)),
+                        "distance_m": distance_m,
+                        "tau_ns": tau_ns,
+                        "confidence_pct": confidence_pct,
                         "variance_state": e_rec.get("variance_state", "stable")
                     }
                     if "props_json" in e_rec:
@@ -221,18 +244,18 @@ class AetherisLedger:
                             props.update(extra)
                         except Exception:
                             pass
-                    edges.append({
-                        "source_id": e_rec["source_id"],
-                        "target_id": e_rec["target_id"],
-                        "props": props
-                    })
+                    hydrated_edges.append(HydratedEdge(
+                        source_id=e_rec["source_id"],
+                        target_id=e_rec["target_id"],
+                        props=props
+                    ))
 
         except Exception:
             pass
 
-        return nodes, edges
+        return HydrationStoreResult(nodes=hydrated_nodes, edges=hydrated_edges)
 
-    def evict_expired(self, max_age_seconds: float = 3600.0) -> Dict[str, int]:
+    def evict_expired(self, max_age_seconds: float = 3600.0) -> EvictionSummary:
         """
         Sub-millisecond O(1) spatial eviction of stale topology state via ZREMRANGEBYSCORE.
         Removes entries older than current timestamp - max_age_seconds.
@@ -254,9 +277,21 @@ class AetherisLedger:
                 del_pipe.zremrangebyscore("aetheris:edges:temporal", "-inf", cutoff)
                 del_pipe.execute()
 
-            return {
-                "evicted_nodes": len(expired_nodes),
-                "evicted_edges": len(expired_edges)
-            }
+            return EvictionSummary(
+                evicted_nodes=len(expired_nodes),
+                evicted_edges=len(expired_edges)
+            )
         except Exception:
-            return {"evicted_nodes": 0, "evicted_edges": 0}
+            return EvictionSummary(evicted_nodes=0, evicted_edges=0)
+
+
+__all__ = [
+    "AetherisLedger",
+    "LedgerPort",
+    "NodeTelemetryPayload",
+    "EvictionSummary",
+    "HydratedNode",
+    "HydratedEdge",
+    "HydrationStoreResult",
+    "_MappingCompatibleModel",
+]

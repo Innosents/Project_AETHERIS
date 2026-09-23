@@ -43,6 +43,8 @@ class TestChaosDigitalTwin:
         Assaults ShardedCivicCache and TrafficMatrixTracker with 100 simultaneous worker threads.
         Asserts zero deadlocks, zero lock contention timeouts (> 10ms), and strict LRU bound maintenance.
         """
+        import gc
+        gc.collect()
         tracker = TrafficMatrixTracker(max_flows=5000)
         num_threads = 100
         iterations_per_thread = 40

@@ -10,20 +10,29 @@ Implements authentic, non-disruptive discovery probes for:
 - SNMP v2c / v3 MIB-II & Enterprise OID Crawling (Port 161)
 """
 
+from __future__ import annotations
+
 import socket
 import struct
 import select
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
-class IndustrialDiscoveryEngine:
+from aetheris.core.ports.industrial_discovery_port import (
+    IndustrialDiscoveryPort,
+    IndustrialProbeResult,
+    _MappingCompatibleModel,
+)
+
+
+class IndustrialDiscoveryEngine(IndustrialDiscoveryPort):
     def __init__(self, timeout: float = 1.2):
         self.timeout = timeout
 
     # =========================================================================
     # 1. Siemens S7Comm ISO-on-TCP (Port 102)
     # =========================================================================
-    def probe_siemens_s7(self, ip: str, port: int = 102) -> Optional[Dict[str, Any]]:
+    def probe_siemens_s7(self, ip: str, port: int = 102) -> Optional[IndustrialProbeResult]:
         """
         Performs RFC 1006 TPKT + COTP Connection Request handshake and queries
         System Status List (SZL 0x0011) for S7-1200 / S7-1500 / S7-300 / S7-400 identification.
@@ -66,20 +75,20 @@ class IndustrialDiscoveryEngine:
                 szl_resp = s.recv(2048)
 
                 szl_text = szl_resp.decode(errors="ignore") if szl_resp else ""
-                return {
-                    "vendor": "Siemens",
-                    "type": "plc",
-                    "model": "SIMATIC S7-1200 PLC (CPU 1214C)" if "1200" in szl_text or "1214" in szl_text else "SIMATIC S7 Industrial Controller",
-                    "protocol": "S7Comm / ISO-on-TCP (Port 102)",
-                    "szl_raw": szl_text[:128]
-                }
+                return IndustrialProbeResult(
+                    vendor="Siemens",
+                    type="plc",
+                    model="SIMATIC S7-1200 PLC (CPU 1214C)" if "1200" in szl_text or "1214" in szl_text else "SIMATIC S7 Industrial Controller",
+                    protocol="S7Comm / ISO-on-TCP (Port 102)",
+                    szl_raw=szl_text[:128]
+                )
         except Exception:
             return None
 
     # =========================================================================
     # 2. EtherNet/IP CIP Encapsulation ListIdentity (Port 44818)
     # =========================================================================
-    def probe_ethernet_ip_cip(self, ip: str, port: int = 44818) -> Optional[Dict[str, Any]]:
+    def probe_ethernet_ip_cip(self, ip: str, port: int = 44818) -> Optional[IndustrialProbeResult]:
         """
         Sends an EtherNet/IP CIP ListIdentity command (0x0063) to discover Rockwell
         Automation PLCs (Micro850, ControlLogix, CompactLogix) and HMIs (PanelView).
@@ -97,20 +106,20 @@ class IndustrialDiscoveryEngine:
                 if resp and len(resp) >= 24:
                     raw_text = resp.decode(errors="ignore")
                     is_hmi = "panelview" in raw_text.lower() or "hmi" in raw_text.lower()
-                    return {
-                        "vendor": "Rockwell Automation",
-                        "type": "hmi" if is_hmi else "plc",
-                        "model": "PanelView 5510 Industrial HMI" if is_hmi else "Micro850 Modbus/TCP PLC",
-                        "protocol": "EtherNet/IP CIP (Port 44818)",
-                        "cip_identity": raw_text[24:120].strip()
-                    }
+                    return IndustrialProbeResult(
+                        vendor="Rockwell Automation",
+                        type="hmi" if is_hmi else "plc",
+                        model="PanelView 5510 Industrial HMI" if is_hmi else "Micro850 Modbus/TCP PLC",
+                        protocol="EtherNet/IP CIP (Port 44818)",
+                        cip_identity=raw_text[24:120].strip()
+                    )
         except Exception:
             return None
 
     # =========================================================================
     # 3. Mercury Security Protocol (Port 3001)
     # =========================================================================
-    def probe_mercury_access(self, ip: str, port: int = 3001) -> Optional[Dict[str, Any]]:
+    def probe_mercury_access(self, ip: str, port: int = 3001) -> Optional[IndustrialProbeResult]:
         """
         Sends an MSP framing POLL probe to extract Mercury Security controller parameters.
         """
@@ -125,34 +134,46 @@ class IndustrialDiscoveryEngine:
 
                 if resp:
                     resp_text = resp.decode(errors="ignore")
-                    return {
-                        "vendor": "Mercury Security",
-                        "type": "access_control",
-                        "model": "Mercury MP1502 Controller",
-                        "protocol": "Mercury Security Protocol (Port 3001)",
-                        "status": "Online / Supervised",
-                        "raw_msp": resp_text
-                    }
+                    return IndustrialProbeResult(
+                        vendor="Mercury Security",
+                        type="access_control",
+                        model="Mercury MP1502 Controller",
+                        protocol="Mercury Security Protocol (Port 3001)",
+                        status="Online / Supervised",
+                        raw_msp=resp_text
+                    )
         except Exception:
             return None
 
     # =========================================================================
     # 4. Modbus/TCP & UMAS (Port 502)
     # =========================================================================
-    def probe_modbus_tcp(self, ip: str, port: int = 502) -> Optional[Dict[str, Any]]:
+    def probe_modbus_tcp(self, ip: str, port: int = 502) -> Optional[IndustrialProbeResult]:
         """
         Performs Modbus Function Code 43 (MEI 14) and FC03 holding register scan.
         """
         try:
-            from discovery.modbus_discovery import query_modbus_device_id
-            return query_modbus_device_id(ip, port, timeout=self.timeout)
+            try:
+                from aetheris.discovery.modbus_discovery import query_modbus_device_id
+            except ImportError:
+                from discovery.modbus_discovery import query_modbus_device_id
+            raw = query_modbus_device_id(ip, port, timeout=self.timeout)
+            if raw and isinstance(raw, dict):
+                return IndustrialProbeResult(
+                    vendor=raw.get("vendor", "Modbus Device"),
+                    type=raw.get("type", "plc"),
+                    model=raw.get("model", "Generic Modbus Controller"),
+                    protocol=raw.get("protocol", "Modbus/TCP (Port 502)"),
+                    status=raw.get("status", "Online")
+                )
+            return None
         except Exception:
             return None
 
     # =========================================================================
     # 5. ONVIF & RTSP Video Probe (Port 554, 80)
     # =========================================================================
-    def probe_rtsp_onvif(self, ip: str, port: int = 554) -> Optional[Dict[str, Any]]:
+    def probe_rtsp_onvif(self, ip: str, port: int = 554) -> Optional[IndustrialProbeResult]:
         """
         Sends an RTSP OPTIONS request and ONVIF probe to discover cameras and NVRs.
         """
@@ -168,20 +189,20 @@ class IndustrialDiscoveryEngine:
                 if resp:
                     text = resp.decode(errors="ignore")
                     vendor = "Axis Communications" if "axis" in text.lower() else "Generic Video"
-                    return {
-                        "vendor": vendor,
-                        "type": "camera",
-                        "model": "AXIS Network Camera" if vendor == "Axis Communications" else "IP Surveillance Camera",
-                        "protocol": "RTSP / ONVIF (Port 554)",
-                        "rtsp_server_header": text[:128]
-                    }
+                    return IndustrialProbeResult(
+                        vendor=vendor,
+                        type="camera",
+                        model="AXIS Network Camera" if vendor == "Axis Communications" else "IP Surveillance Camera",
+                        protocol="RTSP / ONVIF (Port 554)",
+                        rtsp_server_header=text[:128]
+                    )
         except Exception:
             return None
 
     # =========================================================================
     # 6. Avigilon ACC Video Management Cluster Probe (Port 38880 / 38881)
     # =========================================================================
-    def probe_avigilon_acc(self, ip: str, port: int = 38880) -> Optional[Dict[str, Any]]:
+    def probe_avigilon_acc(self, ip: str, port: int = 38880) -> Optional[IndustrialProbeResult]:
         """
         Queries Avigilon ACC cluster control port for NVR storage and cluster status.
         """
@@ -194,13 +215,20 @@ class IndustrialDiscoveryEngine:
                 resp = s.recv(1024)
 
                 if resp:
-                    return {
-                        "vendor": "Avigilon",
-                        "type": "nvr",
-                        "model": "Avigilon Control Center (ACC) NVR",
-                        "protocol": "Avigilon ACC Cluster (Port 38880)",
-                        "throughput_tracking": "Active"
-                    }
+                    return IndustrialProbeResult(
+                        vendor="Avigilon",
+                        type="nvr",
+                        model="Avigilon Control Center (ACC) NVR",
+                        protocol="Avigilon ACC Cluster (Port 38880)",
+                        throughput_tracking="Active"
+                    )
         except Exception:
             return None
 
+
+__all__ = [
+    "IndustrialDiscoveryEngine",
+    "IndustrialDiscoveryPort",
+    "IndustrialProbeResult",
+    "_MappingCompatibleModel",
+]

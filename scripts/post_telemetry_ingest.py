@@ -2,82 +2,79 @@ import json
 import sys
 from pathlib import Path
 import requests
+import time
 
-JSON_PATH = Path("topology_audit.json")
+root_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+JSON_PATH = root_dir / "topology_audit.json" if (root_dir / "topology_audit.json").exists() else Path("topology_audit.json")
 API_URL = "http://127.0.0.1:8080/api/telemetry/ingest"
 
-def transmit_audit_nodes():
+def transmit_audit_nodes(stream_delay: float = 0.0):
     if not JSON_PATH.exists():
-        print(f"[-] Error: {JSON_PATH} not found. Run scripts/export_topology_audit.py first.", file=sys.stderr)
+        print(f"[-] Error: {JSON_PATH} not found. Run scripts/reseed_definitive_topology.py first.", file=sys.stderr)
         sys.exit(1)
 
     with open(JSON_PATH, "r", encoding="utf-8") as f:
         audit = json.load(f)
-
-    # 1. Build MAC-to-Switchport & Interface Map
-    mac_to_port = {}
-    for port_id, interfaces in audit.get("switch_fabric_interfaces", {}).items():
-        for iface in interfaces:
-            mac = (iface.get("mac_address") or "").upper()
-            if mac:
-                mac_to_port[mac] = {
-                    "port_id": port_id,
-                    "hostname": iface.get("hostname"),
-                    "link_speed_mbps": iface.get("link_speed_mbps"),
-                    "connection_type": iface.get("connection_type")
-                }
-
-    # 2. Build Ground Truth Pinning Map
-    gt_pins = {
-        gt["mac_address"].upper(): gt 
-        for gt in audit.get("ground_truth_accuracy_audit", [])
-    }
-
-    # 3. Stream Converged Endpoints to Cytoscape Visualizer
-    endpoints = audit.get("converged_endpoints", [])
-    print(f"[*] Streaming {len(endpoints)} verified nodes to {API_URL}...")
     
-    success_count = 0
-    for ep in endpoints:
-        mac_clean = ep["mac"].upper()
-        port_meta = mac_to_port.get(mac_clean, {})
-        gt_meta = gt_pins.get(mac_clean)
-
-        is_anchor = (ep.get("ip") == "192.168.1.86" or gt_meta is not None)
-        port_name = port_meta.get("port_id", "WLAN")
-
-        # Determine logical parent for Cytoscape topology
-        if port_name == "Port 1" and mac_clean != "10:78:5B:3D:08:80":
-            parent_switch = "Actiontec-Q6000"
-        else:
-            parent_switch = "Gateway-Core"
-
-        payload = {
-            "node_id": f"host_{ep['ip'].replace('.', '_')}",
-            "parent_switch_id": parent_switch,
-            "distance_m": ep["converged_distance_m"],
-            "variance_m2": ep["variance_m2"],
-            "confidence_pct": ep["confidence_pct"],
-            "is_anchor": is_anchor,
-            "edge_type": "ETHERNET_ANCHOR" if is_anchor else ("ETHERNET_LINK" if "Copper" in ep.get("medium", "") else "WIRELESS_AIRLINK"),
-            "node_props": {
-                "ip": ep["ip"],
-                "mac": ep["mac"],
-                "canonical_name": gt_meta.get("canonical_name") if gt_meta else port_meta.get("hostname", ep["ip"]),
-                "switchport": port_name,
-                "medium": ep.get("medium", "Unknown"),
-                "ground_truth_m": gt_meta.get("ground_truth_m") if gt_meta else None
+    # Check if it's the new OT array payload
+    if isinstance(audit, list):
+        nodes = [item["data"] for item in audit if "id" in item.get("data", {})]
+        edges = [item["data"] for item in audit if "source" in item.get("data", {})]
+        
+        # Build map of target -> source for parent relationship
+        edge_map = {e["target"]: e for e in edges}
+        
+        print(f"[*] Streaming {len(nodes)} OT verified nodes to {API_URL}...")
+        success_count = 0
+        for node in nodes:
+            node_id = node["id"]
+            edge = edge_map.get(node_id, {})
+            parent_id = edge.get("source", "RTR-ISR4331") # default to core if no incoming edge
+            dist = edge.get("distance", 0.0)
+            conf = edge.get("confidence", node.get("confidence", 0.9))
+            med = edge.get("medium", "copper").upper()
+            
+            payload = {
+                "node_id": node_id,
+                "parent_switch_id": parent_id,
+                "distance_m": float(dist),
+                "confidence_pct": float(conf) * 100,
+                "edge_type": med,
+                "node_props": {
+                    "label": node.get("label", node_id),
+                    "type": node.get("type", "endpoint"),
+                    "vlan": node.get("vlan", 1),
+                    "confidence": float(conf),
+                    "mac": "00:00:00:00:00:00"
+                }
             }
-        }
-
-        try:
-            res = requests.post(API_URL, json=payload, timeout=2.0)
-            res.raise_for_status()
-            success_count += 1
-        except Exception as e:
-            print(f"[-] Failed to ingest {ep['ip']} ({ep['mac']}): {e}", file=sys.stderr)
-
-    print(f"[+] Ingestion complete: {success_count}/{len(endpoints)} nodes rendered into GraphStore.")
+            
+            try:
+                res = requests.post(API_URL, json=payload, timeout=2.0)
+                res.raise_for_status()
+                success_count += 1
+                if stream_delay > 0:
+                    time.sleep(stream_delay)
+            except Exception as e:
+                print(f"[-] Failed to ingest {node_id}: {e}", file=sys.stderr)
+                
+        print(f"[+] OT Ingestion complete: {success_count}/{len(nodes)} nodes rendered into GraphStore.")
+        return
 
 if __name__ == "__main__":
-    transmit_audit_nodes()
+    import argparse
+    parser = argparse.ArgumentParser(description="AETHERIS Telemetry Ingest Streamer")
+    parser.add_argument("--stream-delay", type=float, default=0.0, help="Delay in seconds between posting endpoints")
+    args = parser.parse_args()
+    
+    for _ in range(10):
+        try:
+            requests.get("http://127.0.0.1:8080/", timeout=1.0)
+            break
+        except Exception:
+            time.sleep(0.5)
+            
+    transmit_audit_nodes(stream_delay=args.stream_delay)

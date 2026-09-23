@@ -15,7 +15,13 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 
 from loguru import logger
-from scapy import data
+
+from aetheris.core.ports.dpi_parser_port import (
+    DpiParserPort,
+    DpiDecodedPayload,
+    DpiPeripheralSubsystem,
+    _MappingCompatibleModel,
+)
 
 class DhcpDecoder:
     """Decodes DHCP/BOOTP (UDP Ports 67/68) broadcast traffic for device fingerprinting."""
@@ -786,14 +792,82 @@ class MercuryMspDecoder:
             return None
 
 
-class DpiParser:
+class DpiParser(DpiParserPort):
     """Unified Deep Packet Inspection dispatcher across all supported application protocols."""
+
+    @staticmethod
+    def _build_outcome(raw_res: Optional[Dict[str, Any]]) -> DpiDecodedPayload:
+        if not raw_res:
+            return DpiDecodedPayload(protocol="UNKNOWN", raw_metadata={})
+
+        protocol = raw_res.get("protocol", "UNKNOWN")
+        vendor = raw_res.get("vendor")
+        model = raw_res.get("model")
+        dev_type = raw_res.get("type")
+        hostname = raw_res.get("hostname") or raw_res.get("http_host") or raw_res.get("sni_hostname")
+        mac = raw_res.get("mac")
+        ip = raw_res.get("requested_ip") or raw_res.get("ip")
+        firmware = raw_res.get("firmware")
+        options = raw_res.get("options") if isinstance(raw_res.get("options"), dict) else {}
+
+        periph_objs: List[DpiPeripheralSubsystem] = []
+        if "peripherals" in raw_res and isinstance(raw_res["peripherals"], list):
+            for p in raw_res["peripherals"]:
+                if isinstance(p, DpiPeripheralSubsystem):
+                    periph_objs.append(p)
+                elif isinstance(p, dict):
+                    periph_objs.append(
+                        DpiPeripheralSubsystem(
+                            id=p.get("id", ""),
+                            name=p.get("name", ""),
+                            type=p.get("type", ""),
+                            protocol=p.get("protocol", ""),
+                            port=p.get("port", ""),
+                            status=p.get("status", "Online / Supervised"),
+                            edge_type=p.get("edge_type"),
+                        )
+                    )
+
+        extra_fields = {
+            k: v
+            for k, v in raw_res.items()
+            if k not in (
+                "protocol",
+                "vendor",
+                "model",
+                "type",
+                "hostname",
+                "mac",
+                "ip",
+                "firmware",
+                "options",
+                "peripherals",
+                "raw_metadata",
+            )
+        }
+
+        return DpiDecodedPayload(
+            protocol=protocol,
+            vendor=vendor,
+            model=model,
+            type=dev_type,
+            hostname=hostname,
+            mac=mac,
+            ip=ip,
+            firmware=firmware,
+            options=options,
+            peripherals=periph_objs,
+            raw_metadata=raw_res,
+            **extra_fields,
+        )
 
     @staticmethod
     def parse_secure_payload(data: bytes) -> Optional[dict]:
         MIN_REQUIRED_LENGTH = 14
         if not data or len(data) < MIN_REQUIRED_LENGTH:
-            logger.debug(f"[DPI Guard] Payload dropped: length {len(data) if data else 0} below minimum threshold {MIN_REQUIRED_LENGTH}")
+            logger.debug(
+                f"[DPI Guard] Payload dropped: length {len(data) if data else 0} below minimum threshold {MIN_REQUIRED_LENGTH}"
+            )
             return None
         try:
             cmd, length = struct.unpack(">HH", data[:4])
@@ -805,111 +879,141 @@ class DpiParser:
         return {}
 
     @staticmethod
-    def parse_payload(payload: bytes, src_port: int, dst_port: int, proto: str) -> Dict[str, Any]:
+    def parse_payload(
+        payload: bytes, src_port: int, dst_port: int, proto: str
+    ) -> DpiDecodedPayload:
         """Inspects application layer payload and extracts protocol-specific discovery telemetry."""
         results: Dict[str, Any] = {}
         if not payload:
-            return results
+            return DpiParser._build_outcome(results)
 
         # 0. Mercury Security Protocol (TCP 3001)
-        if src_port == 3001 or dst_port == 3001 or (payload and payload[0] == 0x02 and b"READY" in payload):
+        if (
+            src_port == 3001
+            or dst_port == 3001
+            or (payload and payload[0] == 0x02 and b"READY" in payload)
+        ):
             msp_info = MercuryMspDecoder.decode(payload)
             if msp_info:
-                # Bind mercury_msp_parser to the ingestion engine
-                model = msp_info.get('model', '')
-                if 'MP1502' in model or 'LP' in model:
+                model = msp_info.get("model", "")
+                if "MP1502" in model or "LP" in model:
                     try:
                         from aetheris.core.parsers.mercury_parser import MSPParser
                         import asyncio
-                        # AST_METHOD_INJECTION execution trace
-                        parser = MSPParser('127.0.0.1', 3001)
+
+                        parser = MSPParser("127.0.0.1", 3001)
                     except Exception:
                         pass
-                        
-                    # Yield downstream sub-peripherals as independent node dictionaries
+
                     new_peripherals = []
-                    for p in msp_info.get('peripherals', []):
+                    for p in msp_info.get("peripherals", []):
                         p_copy = dict(p)
-                        if 'Reader' in p_copy.get('name', ''):
-                            p_copy['edge_type'] = 'composite_22_6'
-                        elif 'Strike' in p_copy.get('name', ''):
-                            p_copy['edge_type'] = 'composite_18_2'
+                        if "Reader" in p_copy.get("name", ""):
+                            p_copy["edge_type"] = "composite_22_6"
+                        elif "Strike" in p_copy.get("name", ""):
+                            p_copy["edge_type"] = "composite_18_2"
                         else:
-                            p_copy['edge_type'] = 'composite_22_4'
+                            p_copy["edge_type"] = "composite_22_4"
                         new_peripherals.append(p_copy)
-                    msp_info['peripherals'] = new_peripherals
-                    
+                    msp_info["peripherals"] = new_peripherals
+
                 results.update(msp_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 1. DHCP / BOOTP (UDP 67 / 68)
         if proto == "UDP" and (src_port in (67, 68) or dst_port in (67, 68)):
             dhcp_info = DhcpDecoder.decode(payload)
             if dhcp_info:
                 results.update(dhcp_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 2. DNS (UDP / TCP 53)
         if src_port == 53 or dst_port == 53:
             dns_info = DnsDecoder.decode(payload)
             if dns_info:
                 results.update(dns_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 3. Ubiquiti UBNT Discovery (UDP 10001)
         if src_port == 10001 or dst_port == 10001:
             ubnt_info = UbntDiscoveryDecoder.decode(payload)
             if ubnt_info:
                 results.update(ubnt_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 4. MikroTik MNDP (UDP 5678)
         if src_port == 5678 or dst_port == 5678:
             mndp_info = MikrotikMndpDecoder.decode(payload)
             if mndp_info:
                 results.update(mndp_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 5. Synology Assistant (UDP 9999) & QNAP Qfinder (UDP 8097)
         if src_port in (9999, 8097) or dst_port in (9999, 8097):
             nas_info = SynologyQnapDecoder.decode(payload, dst_port or src_port)
             if nas_info:
                 results.update(nas_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 6. BACnet/IP (UDP 47808)
         if src_port == 47808 or dst_port == 47808:
             bacnet_info = BacnetIpDecoder.decode(payload)
             if bacnet_info:
                 results.update(bacnet_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 7. EtherNet/IP CIP (UDP / TCP 44818)
         if src_port == 44818 or dst_port == 44818:
             cip_info = EthernetIpCipDecoder.decode(payload)
             if cip_info:
                 results.update(cip_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 8. TLS Client Hello SNI (TCP 443, 8443, etc.)
         if dst_port in (443, 8443, 9443, 10443) or (payload and payload[0] == 22):
             tls_info = TlsSniDecoder.decode(payload)
             if tls_info:
                 results.update(tls_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 9. HTTP / Web (TCP 80, 8080, 8000, etc.)
-        if dst_port in (80, 8080, 8000, 8088, 8888, 5000, 3000) or src_port in (80, 8080, 8000):
+        if dst_port in (80, 8080, 8000, 8088, 8888, 5000, 3000) or src_port in (
+            80,
+            8080,
+            8000,
+        ):
             http_info = HttpDecoder.decode(payload)
             if http_info:
                 results.update(http_info)
-                return results
+                return DpiParser._build_outcome(results)
 
         # 10. VoIP & Industrial Protocols (SIP, Modbus, S7)
         voip_ot = VoipOtDecoder.decode(payload, dst_port)
         if voip_ot:
             results.update(voip_ot)
-            return results
+            return DpiParser._build_outcome(results)
 
-        return results
+        return DpiParser._build_outcome(results)
+
+
+__all__ = [
+    "DpiParser",
+    "DpiParserPort",
+    "DpiDecodedPayload",
+    "DpiPeripheralSubsystem",
+    "_MappingCompatibleModel",
+    "DhcpDecoder",
+    "DnsDecoder",
+    "TlsSniDecoder",
+    "HttpDecoder",
+    "VoipOtDecoder",
+    "UbntDiscoveryDecoder",
+    "MikrotikMndpDecoder",
+    "SynologyQnapDecoder",
+    "StpBpduDecoder",
+    "ProfinetDcpDecoder",
+    "EthernetIpCipDecoder",
+    "BacnetIpDecoder",
+    "MercuryMspDecoder",
+]
 

@@ -7,7 +7,7 @@ to detect 100 Mbps bridges and line-rate serialization bottlenecks.
 import time
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 try:
     from scapy.all import IP, ICMP, Raw, sr1
@@ -15,8 +15,16 @@ try:
 except ImportError:
     SCAPY_AVAILABLE = False
 
+from aetheris.core.ports.serialization_probe_port import (
+    SerializationProbePort,
+    SerializationStoragePort,
+    SerializationSlopeRecord,
+    SerializationSweepSummary,
+    _MappingCompatibleModel,
+)
 
-class SerializationProber:
+
+class SerializationProber(SerializationProbePort, SerializationStoragePort):
     """
     Active ICMP echo prober sending dual-payload bursts:
       - Small payload: 64 bytes
@@ -93,7 +101,7 @@ class SerializationProber:
         ip: str,
         count: Optional[int] = None,
         timeout: Optional[float] = None
-    ) -> Dict[str, Any]:
+    ) -> SerializationSlopeRecord:
         """
         Sends ICMP echo bursts at 64 and 1400 byte payloads.
         Computes Delta t_serialization = RTT_1400 - RTT_64.
@@ -159,31 +167,31 @@ class SerializationProber:
         inferred_link_speed = "100Mbps_BRIDGE" if is_throttled else "1Gbps_FULL"
         status = "THROTTLED_OR_100M_BRIDGE" if is_throttled else "GIGABIT_LINE_RATE"
 
-        return {
-            "ip": ip,
-            "switchport": "Port 1",
-            "rtt_64_us": rtt_64,
-            "rtt_1400_us": rtt_1400,
-            "delta_t_serialization_us": delta_t_us,
-            "is_throttled": is_throttled,
-            "inferred_link_speed": inferred_link_speed,
-            "status": status,
-            "samples_64": samples_64,
-            "samples_1400": samples_1400
-        }
+        return SerializationSlopeRecord(
+            ip=ip,
+            switchport="Port 1",
+            rtt_64_us=rtt_64,
+            rtt_1400_us=rtt_1400,
+            delta_t_serialization_us=delta_t_us,
+            is_throttled=is_throttled,
+            inferred_link_speed=inferred_link_speed,
+            status=status,
+            samples_64=samples_64,
+            samples_1400=samples_1400
+        )
 
-    def sweep_port1_targets(self, targets: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def sweep_port1_targets(self, targets: Optional[List[str]] = None) -> List[SerializationSlopeRecord]:
         """
         Executes active serialization slope probes against all Port 1 endpoints.
         """
         target_list = targets or self.DEFAULT_PORT1_TARGETS
-        results = []
+        results: List[SerializationSlopeRecord] = []
         for target in target_list:
             res = self.probe_host(target)
             results.append(res)
         return results
 
-    def save_to_ledger(self, results: List[Dict[str, Any]]) -> None:
+    def save_to_ledger(self, results: List[Union[SerializationSlopeRecord, Dict[str, Any]]]) -> None:
         """
         Persists serialization deconvolution measurements into spatial_ledger.db.
         """
@@ -203,6 +211,15 @@ class SerializationProber:
                     )
                 """)
                 for r in results:
+                    ip_val = r["ip"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.ip
+                    sw_val = r.get("switchport", "Port 1") if hasattr(r, "get") else getattr(r, "switchport", "Port 1")
+                    rtt64 = r["rtt_64_us"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.rtt_64_us
+                    rtt1400 = r["rtt_1400_us"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.rtt_1400_us
+                    delta_t = r["delta_t_serialization_us"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.delta_t_serialization_us
+                    is_throt = r["is_throttled"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.is_throttled
+                    link_sp = r["inferred_link_speed"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.inferred_link_speed
+                    stat = r["status"] if isinstance(r, (dict, _MappingCompatibleModel)) else r.status
+
                     conn.execute("""
                         INSERT OR REPLACE INTO serialization_telemetry (
                             ip, switchport, rtt_64_us, rtt_1400_us,
@@ -210,16 +227,25 @@ class SerializationProber:
                             inferred_link_speed, status
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        r["ip"],
-                        r.get("switchport", "Port 1"),
-                        r["rtt_64_us"],
-                        r["rtt_1400_us"],
-                        r["delta_t_serialization_us"],
-                        1 if r["is_throttled"] else 0,
-                        r["inferred_link_speed"],
-                        r["status"]
+                        ip_val,
+                        sw_val,
+                        rtt64,
+                        rtt1400,
+                        delta_t,
+                        1 if is_throt else 0,
+                        link_sp,
+                        stat
                     ))
                 conn.commit()
         except Exception:
             pass
 
+
+__all__ = [
+    "SerializationProber",
+    "SerializationProbePort",
+    "SerializationStoragePort",
+    "SerializationSlopeRecord",
+    "SerializationSweepSummary",
+    "_MappingCompatibleModel",
+]
