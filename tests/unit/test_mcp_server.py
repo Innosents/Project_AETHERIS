@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for McpServerPort and MCP Microserver adapters.
 Validates AST boundary isolation, protocol conformance, tool dispatch, and schema dual-access.
 """

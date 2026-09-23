@@ -1,4 +1,4 @@
-﻿"""
+"""
 Unit test suite for MirrorEnginePort and SpanCaptureEngine adapter.
 Validates AST boundary isolation, protocol conformance, VLAN extraction, ERSPAN parsing, and schema dual-access.
 """
