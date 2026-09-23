@@ -51,4 +51,12 @@ jobs:
       env:
         PYTHONPATH: .
       run: |
-        python -m pytest tests/unit/test_spatial_solver.py tests/unit/test_state_machine.py tests/unit/test_telemetry_ledger.py tests/unit/test_topologies_projection.py tests/unit/test_spatial_bayesian.py -v --tb=short
+        set +e
+        python -m pytest tests/unit/test_spatial_solver.py tests/unit/test_state_machine.py tests/unit/test_telemetry_ledger.py tests/unit/test_topologies_projection.py tests/unit/test_spatial_bayesian.py -v --tb=short > pytest_output.log 2>&1
+        PYTEST_EXIT=$?
+        echo "### Pytest Execution Log (Exit Code: )" >> $GITHUB_STEP_SUMMARY
+        echo "\\\" >> $GITHUB_STEP_SUMMARY
+        cat pytest_output.log >> $GITHUB_STEP_SUMMARY
+        echo "\\\" >> $GITHUB_STEP_SUMMARY
+        cat pytest_output.log
+        exit $PYTEST_EXIT
