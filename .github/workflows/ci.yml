@@ -51,4 +51,4 @@ jobs:
       env:
         PYTHONPATH: .
       run: |
-        python -m pytest tests/unit/test_spatial_solver.py tests/unit/test_state_machine.py tests/unit/test_telemetry_ledger.py tests/unit/test_topologies_projection.py tests/unit/test_spatial_bayesian.py -v --tb=short
+        python -m pytest tests/unit tests/integration -v --tb=short
