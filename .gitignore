@@ -89,3 +89,6 @@ device_identity_profiles.json
 *.db-wal
 *.db-shm
 spatial_ledger.db
+
+# Local LLM Weights
+.local_models/
