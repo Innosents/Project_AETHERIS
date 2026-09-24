@@ -1,16 +1,31 @@
-﻿import ollama
+﻿import json
+from pathlib import Path
 from typing import Dict, Any, List
 from loguru import logger
+from llama_cpp import Llama
 from aetheris.core.ports.telemetry_ledger import TelemetryLedgerPort
 from aetheris.agent.swarm.base_node import SwarmNode
 
 class LlamaOrchestrator:
-    def __init__(self, model_identifier: str, ledger: TelemetryLedgerPort):
-        self.model_identifier = model_identifier
+    def __init__(self, model_path: str = ".local_models/llama-3.1-8b-instruct-q4_km.gguf", ledger: TelemetryLedgerPort = None):
         self.ledger = ledger
         self.system_prompt = self._compile_commander_directives()
         self.swarm_nodes: Dict[str, SwarmNode] = {}
-        logger.info(f"LlamaOrchestrator (Figurehead) initialized. Awaiting swarm binding.")
+        
+        # Initialize memory-native GGUF inference via llama.cpp
+        resolved_path = Path(model_path)
+        if not resolved_path.exists():
+            logger.warning(f"GGUF weights not found at {{resolved_path}}. Model initialization deferred.")
+            self.llm = None
+        else:
+            logger.info(f"Loading Llama 3.1 GGUF weights from {{resolved_path}} into system RAM...")
+            self.llm = Llama(
+                model_path=str(resolved_path),
+                n_ctx=4096,
+                n_threads=6, # Adjusted for optimal CPU core utilization
+                verbose=False
+            )
+            logger.info("LlamaOrchestrator memory-native inference engine online.")
 
     def _compile_commander_directives(self) -> str:
         return (
@@ -45,40 +60,27 @@ class LlamaOrchestrator:
         return schemas
 
     async def execute_strategic_cycle(self, user_intent: str) -> Dict[str, Any]:
-        logger.info(f"Initiating strategic cycle for intent: {user_intent}")
+        if not self.llm:
+            return {"status": "error", "reason": "GGUF weight binaries not found in .local_models/"}
+            
+        logger.info(f"Executing local memory-native strategic cycle for intent: {{user_intent}}")
         
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_intent}
-        ]
+        prompt = f"<|system|>\n{{self.system_prompt}}\n<|user|>\n{{user_intent}}\n<|assistant|>"
         
         try:
-            response = ollama.chat(
-                model=self.model_identifier,
-                messages=messages,
-                tools=self._generate_delegation_schemas()
+            # Direct CPU/RAM inference using llama-cpp-python
+            response = self.llm(
+                prompt,
+                max_tokens=512,
+                tools=self._generate_delegation_schemas(),
+                tool_choice="auto"
             )
         except Exception as e:
-            logger.error(f"Ollama inference fault: {str(e)}")
+            logger.error(f"llama.cpp inference fault: {{str(e)}}")
             return {"status": "error", "reason": str(e)}
 
-        msg = response.get("message", {})
+        choice = response.get("choices", [{}])[0]
+        message = choice.get("text", "")
         
-        if "tool_calls" in msg and msg["tool_calls"]:
-            executions = []
-            for tool in msg["tool_calls"]:
-                fn_name = tool["function"]["name"]
-                args = tool["function"]["arguments"]
-                logger.warning(f"COMMANDER DELEGATION -> {fn_name} | Payload: {args}")
-                
-                target_node = fn_name.replace("delegate_to_", "")
-                if target_node in self.swarm_nodes:
-                    # In Phase 97, this will trigger the worker's internal Ollama loop
-                    executions.append({"node": target_node, "directive": args.get("directive")})
-                else:
-                    logger.error(f"Invalid delegation target: {fn_name}")
-            
-            return {"status": "delegated", "executions": executions}
-        
-        logger.info("Commander synthesized direct response without delegation.")
-        return {"status": "synthesized", "content": msg.get("content")}
+        logger.info("Strategic Commander completed evaluation cycle.")
+        return {"status": "synthesized", "content": message}
