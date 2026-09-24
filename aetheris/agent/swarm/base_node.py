@@ -59,14 +59,14 @@ class SwarmNode:
                 if fn_name in mcp._tools:
                     try:
                         # Direct tool execution against the FastMCP abstraction
-                        # tool_def = mcp._tools[fn_name]
-                        # await tool_def.fn(**args) # (Actual execution simulated for ledger push)
+                        tool_def = mcp._tools[fn_name]
+                        await tool_def.fn(**args) # (Actual execution simulated for ledger push)
                         
                         logger.info(f"[{self.name} Node] Tool {fn_name} executed. Publishing to Blackboard.")
                         
                         # Write the structural telemetry to the Redis ledger (Blackboard)
                         payload = json.dumps({"tool": fn_name, "status": "completed", "args": args})
-                        # self.ledger.publish(f"aetheris:telemetry:{self.name.lower()}", payload)
+                        self.ledger.publish(f"aetheris:telemetry:{self.name.lower()}", payload)
                         
                         results.append({"tool": fn_name, "status": "executed", "args": args})
                     except Exception as ex:
