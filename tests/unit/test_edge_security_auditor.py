@@ -8,7 +8,7 @@ import asyncio
 import unittest
 from unittest.mock import patch, MagicMock, AsyncMock
 import httpx
-from aetheris.core.security_auditor import EdgeSecurityAuditor
+from aetheris.infrastructure.edge_auditor import EdgeSecurityAuditor
 
 
 class TestEdgeSecurityAuditor(unittest.TestCase):
