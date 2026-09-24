@@ -18,3 +18,12 @@ class CartographerNode(SwarmNode):
             allowed_tools=["spatial_bayesian", "kalman_filter", "topologies_projection"],
             ledger=ledger
         )
+
+class SecurityAuditorNode(SwarmNode):
+    def __init__(self, ledger: TelemetryLedgerPort):
+        super().__init__(
+            name="SecurityAuditor",
+            instructions="You are the edge-defense and vulnerability specialist. Evaluate converged topological graphs for CVEs, boundary logic violations, and OT isolation faults. Push security constraints back to the ledger.",
+            allowed_tools=["edge_security_auditor", "cve_lookup", "scope_guard", "identity_sanitizer"],
+            ledger=ledger
+        )
